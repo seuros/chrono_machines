@@ -5,6 +5,12 @@ require_relative 'test_helper'
 class AsyncTest < Minitest::Test
   include ChronoMachines::TestHelper
 
+  def setup
+    super
+    # Skip async tests if Async is not available (non-MRI Ruby)
+    skip "Async gem not available" unless defined?(Async)
+  end
+
   def test_async_support_does_not_break_normal_operation
     # Even with Async loaded, normal operation should work
     call_count = 0
@@ -59,7 +65,7 @@ class AsyncTest < Minitest::Test
     executor = ChronoMachines::Executor.new
 
     result = nil
-    Async do
+    Async do |task|
       start_time = Time.now
       executor.send(:robust_sleep, 0.005)
       end_time = Time.now

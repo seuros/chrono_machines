@@ -31,14 +31,4 @@ module ChronoMachines
     end
   end
 
-  # Global configuration instance
-  @config = Configuration.new
-
-  def self.configure
-    yield @config
-  end
-
-  def self.config
-    @config
-  end
 end
