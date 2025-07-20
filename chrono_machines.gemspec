@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description = 'ChronoMachines offers a flexible and configurable solution for handling transient failures in distributed Ruby applications. It provides powerful retry strategies, including exponential backoff and full jitter, along with customizable callbacks for success, retry, and failure events. Define and manage retry policies with a clean DSL for seamless integration.'
   spec.homepage = 'https://github.com/seuros/chrono_machines'
   spec.license = 'MIT'
-  spec.required_ruby_version = '>= 3.4.0'
+  spec.required_ruby_version = '>= 3.3.0'
 
   spec.metadata['allowed_push_host'] = 'https://rubygems.org'
 

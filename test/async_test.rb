@@ -7,7 +7,7 @@ class AsyncTest < Minitest::Test
 
   def setup
     super
-    # Skip async tests if Async is not available (e.g., on JRuby)
+    # Skip async tests if Async is not available (non-MRI Ruby)
     skip "Async gem not available" unless defined?(Async)
   end
 

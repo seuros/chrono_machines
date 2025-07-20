@@ -12,7 +12,7 @@ gem 'rubocop-rake', '~> 0.6'
 gem 'zeitwerk', '~> 2.7'
 
 # Platform specific gems (MRI Ruby only)
-platforms :ruby do
+platforms :mri do
   gem 'async'
   gem 'rbs', '~> 3.0'
 end
