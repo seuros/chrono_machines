@@ -1,0 +1,69 @@
+# COSS Metadata v0.0.3
+# ChronoMachines - A robust Ruby gem for implementing retry mechanisms with exponential backoff and jitter
+
+# Basic Project Information
+name = "chrono_machines"
+version = "0.2.0"
+description = "A robust Ruby gem for implementing retry mechanisms with exponential backoff and jitter"
+licenses = ["MIT"]
+ai_contributions = true
+coss_compliant = true
+homepage = "https://github.com/seuros/chrono_machines"
+keywords = ["retry", "exponential-backoff", "jitter", "resilience", "distributed-systems", "ruby", "temporal", "reliability"]
+
+# Repository and Issue Tracking
+repository = "https://github.com/seuros/chrono_machines"
+issue_tracker = "https://github.com/seuros/chrono_machines/issues"
+documentation = "https://github.com/seuros/chrono_machines/blob/master/README.md"
+security_policy = "https://github.com/seuros/chrono_machines/security/policy"
+
+# Languages, Frameworks, and Platforms
+languages = ["ruby"]
+supported_platforms = ["linux", "darwin", "windows"]
+
+# Dependency Lock Files
+[dependency_locks]
+ruby = "Gemfile.lock"
+
+[packaging]
+ruby = "gem build chrono_machines.gemspec"
+
+# Maintainers and Governance
+maintainers = ["terminale@gmail.com"]
+governance = { type = "informal" }
+
+# Linting, Formatting, and Static Analysis
+lint = "bundle exec rubocop"
+format = "bundle exec rubocop -A"
+
+# CI and Build Commands
+build = "gem build chrono_machines.gemspec"
+test = "bundle exec rake test"
+
+# Tests and Quality Metrics
+[test_frameworks]
+ruby = "minitest"
+
+# Commit Guidelines and Formats
+commit_message_format = "Conventional Commits"
+
+# Release and Changelog
+changelog = "CHANGELOG.md"
+release_tag_pattern = "v{version}"
+
+# Project Classification
+project_type = "library"
+maturity = "stable"
+audience = ["developers", "devops", "sre"]
+
+# Environment and Runtime Info
+[environments]
+ruby = "3.3+"
+
+# Package Identification (PURL)
+[package_identity]
+purl = "pkg:gem/chrono_machines@0.2.0"
+
+# Dependencies
+[dependencies_purl]
+zeitwerk = "pkg:gem/fxn/zeitwerk@2.7.3"
