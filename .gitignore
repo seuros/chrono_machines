@@ -7,3 +7,12 @@
 /spec/reports/
 /tmp/
 Gemfile.lock
+
+# Rust/native extension build artifacts
+/ext/**/target/
+/ext/**/*.bundle
+/ext/**/*.dSYM/
+/ext/**/Makefile
+/ext/**/mkmf.log
+/ext/**/.sitearchdir.time
+/ext/**/Cargo.lock

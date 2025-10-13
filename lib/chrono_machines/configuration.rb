@@ -5,15 +5,17 @@ module ChronoMachines
     DEFAULT_POLICY_NAME = :default
 
     attr_reader :policies
+    attr_accessor :engine_override
 
     def initialize
+      @engine_override = nil # nil = auto-detect, :ruby = force Ruby, :native = force native
       @policies = {
         DEFAULT_POLICY_NAME => {
           max_attempts: 3,
           base_delay: 0.1, # seconds
           multiplier: 2,
           max_delay: 10, # seconds
-          jitter_factor: 0.1, # 10% jitter (though full jitter makes this less direct)
+          jitter_factor: 1.0, # 1.0 = full jitter (recommended), 0.0 = no jitter
           retryable_exceptions: [StandardError],
           on_failure: nil, # Fallback block when all retries are exhausted
           on_retry: nil,   # Callback block when a retry occurs
@@ -23,12 +25,23 @@ module ChronoMachines
     end
 
     def define_policy(name, options)
-      @policies[name.to_sym] = @policies[DEFAULT_POLICY_NAME].merge(options)
+      # Deep copy the default policy to avoid shared mutable references
+      default_copy = @policies[DEFAULT_POLICY_NAME].transform_values do |value|
+        case value
+        when Array
+          value.dup
+        when Proc
+          value # Procs are immutable, no need to dup
+        else
+          value # Primitives (numbers, symbols, nil) are immutable
+        end
+      end
+
+      @policies[name.to_sym] = default_copy.merge(options)
     end
 
     def get_policy(name)
       @policies[name.to_sym] || raise(ArgumentError, "Policy '#{name}' not found.")
     end
   end
-
 end

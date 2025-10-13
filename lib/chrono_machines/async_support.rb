@@ -27,7 +27,8 @@ if async_available
         end
 
         if current_task
-          current_task.sleep(delay)
+          # Use Kernel#sleep which is now fiber-aware in async 2.x
+          sleep(delay)
         else
           original_robust_sleep(delay)
         end

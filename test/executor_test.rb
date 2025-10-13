@@ -4,6 +4,7 @@ require_relative 'test_helper'
 
 class ExecutorTest < Minitest::Test
   include ChronoMachines::TestHelper
+
   def test_calculate_delay_increases_exponentially
     executor = ChronoMachines::Executor.new(base_delay: 1, multiplier: 2, max_delay: 100)
 
@@ -66,6 +67,29 @@ class ExecutorTest < Minitest::Test
     unique_delays = delays.uniq.length
 
     assert_operator unique_delays, :>, 10, "Expected more variation in jitter, got #{unique_delays} unique values"
+  end
+
+  def test_jitter_factor_above_one_is_clamped
+    executor = ChronoMachines::Executor.new(base_delay: 1, multiplier: 1, max_delay: 10, jitter_factor: 5)
+
+    delay = executor.send(:calculate_delay, 1)
+
+    assert_operator delay, :>=, 0
+    assert_operator delay, :<=, 1
+  end
+
+  def test_jitter_factor_below_zero_is_clamped
+    executor = ChronoMachines::Executor.new(base_delay: 1, multiplier: 1, max_delay: 10, jitter_factor: -0.5)
+
+    delay = executor.send(:calculate_delay, 1)
+
+    assert_in_delta 1, delay, 1e-6
+  end
+
+  def test_jitter_factor_nan_raises_error
+    executor = ChronoMachines::Executor.new(jitter_factor: Float::NAN)
+
+    assert_raises(ArgumentError) { executor.send(:calculate_delay, 1) }
   end
 
   def test_robust_sleep_handles_zero_delay

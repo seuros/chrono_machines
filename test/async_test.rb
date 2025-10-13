@@ -8,7 +8,7 @@ class AsyncTest < Minitest::Test
   def setup
     super
     # Skip async tests if Async is not available (non-MRI Ruby)
-    skip "Async gem not available" unless defined?(Async)
+    skip 'Async gem not available' unless defined?(Async)
   end
 
   def test_async_support_does_not_break_normal_operation
@@ -65,7 +65,7 @@ class AsyncTest < Minitest::Test
     executor = ChronoMachines::Executor.new
 
     result = nil
-    Async do |task|
+    Async do |_task|
       start_time = Time.now
       executor.send(:robust_sleep, 0.005)
       end_time = Time.now

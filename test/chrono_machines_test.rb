@@ -134,7 +134,8 @@ class ChronoMachinesTest < Minitest::Test
 
     ChronoMachines.retry(
       max_attempts: 3,
-      base_delay: 0.001, # Very short delay for test
+      base_delay: 0.01, # Short delay for test
+      jitter_factor: 0.5, # 50% jitter ensures delay is always positive (0.5 to 1.0 of base)
       on_retry: lambda { |exception:, attempt:, next_delay:|
         retry_calls << { exception: exception, attempt: attempt, next_delay: next_delay }
       }
