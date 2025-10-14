@@ -3,5 +3,5 @@ members = ["core", "ffi"]
 resolver = "2"
 
 [workspace.dependencies]
-chrono_machines = { path = "./core" }
+chrono-machines = { path = "./core" }
 rand = { version = "0.8", default-features = false }

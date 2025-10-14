@@ -12,10 +12,10 @@ name = "chrono_machines_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-chrono_machines = { workspace = true, features = ["std"] }
+chrono-machines = { workspace = true, features = ["std"] }
 magnus = { version = "0.7", features = ["embed"] }
 rand = { workspace = true }
 
 [features]
 default = ["std"]
-std = ["chrono_machines/std"]
+std = ["chrono-machines/std"]
