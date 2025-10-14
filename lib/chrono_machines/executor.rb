@@ -45,11 +45,13 @@ module ChronoMachines
           raise MaxRetriesExceededError.new(e, attempts)
         end
 
-        # Call retry callback if defined
-        @on_retry&.call(exception: e, attempt: attempts, next_delay: calculate_delay(attempts))
-
-        # Calculate and execute delay with robust sleep
+        # Calculate delay
         delay = calculate_delay(attempts)
+
+        # Call retry callback if defined
+        @on_retry&.call(exception: e, attempt: attempts, next_delay: delay)
+
+        # Execute delay with robust sleep
         robust_sleep(delay)
         retry
       end
@@ -62,8 +64,12 @@ module ChronoMachines
       # Ensure it doesn't exceed max_delay
       base_exponential_delay = [@base_delay * (@multiplier**(attempts - 1)), @max_delay].min
 
-      # Apply full jitter: random value between 0 and the base_exponential_delay
-      rand * base_exponential_delay
+      # Apply jitter: blend between deterministic and random delay
+      # jitter_factor of 1.0 = full jitter (0 to base), 0.0 = no jitter (exactly base)
+      # Formula: base * (1 - jitter_factor + rand * jitter_factor)
+      # Example with jitter_factor=0.1: base * (0.9 + rand*0.1) = 90% to 100% of base
+      jitter_factor = normalized_jitter_factor
+      base_exponential_delay * (1 - jitter_factor + (rand * jitter_factor))
     end
 
     def robust_sleep(delay)
@@ -93,5 +99,21 @@ module ChronoMachines
         # Could log this or handle as needed
       end
     end
+
+    def normalized_jitter_factor
+      factor = Float(@jitter_factor)
+      raise ArgumentError, 'jitter_factor cannot be NaN' if factor.nan?
+
+      factor.clamp(0.0, 1.0)
+    rescue ArgumentError, TypeError
+      raise ArgumentError, 'jitter_factor must be a numeric value'
+    end
   end
+end
+
+# Load optional native speedup if available
+begin
+  require_relative 'native_speedup'
+rescue LoadError
+  # Native extension not available, continue with pure Ruby implementation
 end
