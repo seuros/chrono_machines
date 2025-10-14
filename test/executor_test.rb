@@ -92,6 +92,20 @@ class ExecutorTest < Minitest::Test
     assert_raises(ArgumentError) { executor.send(:calculate_delay, 1) }
   end
 
+  def test_sub_millisecond_delay_is_preserved
+    executor = ChronoMachines::Executor.new(
+      base_delay: 0.0004,
+      multiplier: 1,
+      max_delay: 0.001,
+      jitter_factor: 0.5
+    )
+
+    delay = executor.send(:calculate_delay, 1)
+
+    assert_operator delay, :>=, 0.0002
+    assert_operator delay, :<=, 0.0004
+  end
+
   def test_robust_sleep_handles_zero_delay
     executor = ChronoMachines::Executor.new
 
