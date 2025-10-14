@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
-root_lib = File.expand_path('../lib', __dir__)
-$LOAD_PATH.unshift(root_lib) unless $LOAD_PATH.include?(root_lib)
+def add_to_load_path(path)
+  path = File.expand_path(path, __dir__)
+  $LOAD_PATH.unshift(path) unless $LOAD_PATH.include?(path)
+end
 
-native_ext_dir = File.expand_path('../ext', __dir__)
-$LOAD_PATH.unshift(native_ext_dir) if Dir.exist?(native_ext_dir) && !$LOAD_PATH.include?(native_ext_dir)
+add_to_load_path('../lib')
+add_to_load_path('../ext') if Dir.exist?(File.expand_path('../ext', __dir__))
 
 begin
   require 'async'

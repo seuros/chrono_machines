@@ -89,10 +89,3 @@ You'll need to provide your own RNG and use `calculate_delay_with_rng()`.
 ## License
 
 MIT
-
-## Part of ChronoMachines Ecosystem
-
-This core library powers:
-- **chrono_machines** (Ruby gem) - via FFI
-- **chrono-machines-py** (Python) - via pyo3 *(planned)*
-- **chrono-machines** (Node.js) - via napi-rs *(planned)*

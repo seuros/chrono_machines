@@ -19,6 +19,6 @@ default = ["std"]
 std = ["rand/std", "rand/std_rng"]
 
 [dependencies]
-rand = { workspace = true, features = ["small_rng"] }
+rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 
 [dev-dependencies]
