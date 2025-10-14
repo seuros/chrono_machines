@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'chrono_machines/v*'
   workflow_dispatch:
 
 permissions:
