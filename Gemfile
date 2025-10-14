@@ -16,4 +16,5 @@ platforms :mri do
   gem 'async', '~> 2.34'
   gem 'rbs', '~> 3.0'
   gem 'rb_sys', '~> 0.9' # For building native extension
+  gem 'rake-compiler', '~> 1.2'
 end
