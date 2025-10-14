@@ -1,0 +1,97 @@
+name: Publish to GitHub Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - run: bundle exec rake compile
+
+      - run: gem build chrono_machines.gemspec
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-x86_64-linux
+          path: '*.gem'
+
+  build-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - run: bundle exec rake compile
+
+      - run: gem build chrono_machines.gemspec
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-aarch64-linux
+          path: '*.gem'
+
+  build-macos-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+
+      - run: bundle exec rake compile
+
+      - run: gem build chrono_machines.gemspec
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-arm64-darwin
+          path: '*.gem'
+
+  publish:
+    needs: [build-linux-x86_64, build-linux-arm64, build-macos-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: gems
+
+      - name: Configure gem credentials
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ~/.gem
+          cat << EOF > ~/.gem/credentials
+          ---
+          :github: Bearer ${{ secrets.GITHUB_TOKEN }}
+          EOF
+          chmod 0600 ~/.gem/credentials
+
+      - name: Publish all gems to GitHub Packages
+        run: |
+          for gemfile in gems/**/*.gem; do
+            echo "Publishing $gemfile to GitHub Packages"
+            gem push --key github \
+              --host https://rubygems.pkg.github.com/seuros \
+              "$gemfile" || echo "Failed to push $gemfile"
+          done
