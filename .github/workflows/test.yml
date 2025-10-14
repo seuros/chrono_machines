@@ -7,7 +7,22 @@ on:
     branches: [ master ]
 
 jobs:
+  test-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust core tests
+        run: |
+          cd ext/chrono_machines_native/core
+          cargo test --all-features
+      - name: Run Rust doc tests
+        run: |
+          cd ext/chrono_machines_native/core
+          cargo test --doc
+
   test-mri:
+    needs: test-rust
     runs-on: ubuntu-latest
     strategy:
       matrix:
