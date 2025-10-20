@@ -29,6 +29,9 @@ pub trait BackoffStrategy {
     ///
     /// `true` if another retry is allowed, `false` otherwise
     fn should_retry(&self, attempt: u8) -> bool;
+
+    /// Maximum number of retry attempts permitted by this strategy.
+    fn max_attempts(&self) -> u8;
 }
 
 /// Exponential backoff strategy with configurable jitter
@@ -132,6 +135,10 @@ impl BackoffStrategy for ExponentialBackoff {
     fn should_retry(&self, attempt: u8) -> bool {
         attempt < self.max_attempts
     }
+
+    fn max_attempts(&self) -> u8 {
+        self.max_attempts
+    }
 }
 
 /// Constant backoff strategy with fixed delay
@@ -212,6 +219,10 @@ impl BackoffStrategy for ConstantBackoff {
 
     fn should_retry(&self, attempt: u8) -> bool {
         attempt < self.max_attempts
+    }
+
+    fn max_attempts(&self) -> u8 {
+        self.max_attempts
     }
 }
 
@@ -324,13 +335,86 @@ impl BackoffStrategy for FibonacciBackoff {
     fn should_retry(&self, attempt: u8) -> bool {
         attempt < self.max_attempts
     }
+
+    fn max_attempts(&self) -> u8 {
+        self.max_attempts
+    }
+}
+
+/// Backoff policy that can represent any supported strategy.
+///
+/// The enum form makes it possible to store heterogeneous strategies in a
+/// registry or configuration without heap allocation or dynamic dispatch.
+#[derive(Debug, Clone, Copy)]
+pub enum BackoffPolicy {
+    /// Exponential backoff policy
+    Exponential(ExponentialBackoff),
+    /// Constant backoff policy
+    Constant(ConstantBackoff),
+    /// Fibonacci backoff policy
+    Fibonacci(FibonacciBackoff),
+}
+
+impl BackoffPolicy {
+    /// Return the maximum retry attempts for the wrapped strategy.
+    pub fn max_attempts(&self) -> u8 {
+        match self {
+            BackoffPolicy::Exponential(policy) => policy.max_attempts,
+            BackoffPolicy::Constant(policy) => policy.max_attempts,
+            BackoffPolicy::Fibonacci(policy) => policy.max_attempts,
+        }
+    }
+}
+
+impl BackoffStrategy for BackoffPolicy {
+    fn delay<R: Rng>(&self, attempt: u8, rng: &mut R) -> Option<u64> {
+        match self {
+            BackoffPolicy::Exponential(policy) => policy.delay(attempt, rng),
+            BackoffPolicy::Constant(policy) => policy.delay(attempt, rng),
+            BackoffPolicy::Fibonacci(policy) => policy.delay(attempt, rng),
+        }
+    }
+
+    fn should_retry(&self, attempt: u8) -> bool {
+        match self {
+            BackoffPolicy::Exponential(policy) => policy.should_retry(attempt),
+            BackoffPolicy::Constant(policy) => policy.should_retry(attempt),
+            BackoffPolicy::Fibonacci(policy) => policy.should_retry(attempt),
+        }
+    }
+
+    fn max_attempts(&self) -> u8 {
+        match self {
+            BackoffPolicy::Exponential(policy) => policy.max_attempts(),
+            BackoffPolicy::Constant(policy) => policy.max_attempts(),
+            BackoffPolicy::Fibonacci(policy) => policy.max_attempts(),
+        }
+    }
+}
+
+impl From<ExponentialBackoff> for BackoffPolicy {
+    fn from(value: ExponentialBackoff) -> Self {
+        BackoffPolicy::Exponential(value)
+    }
+}
+
+impl From<ConstantBackoff> for BackoffPolicy {
+    fn from(value: ConstantBackoff) -> Self {
+        BackoffPolicy::Constant(value)
+    }
+}
+
+impl From<FibonacciBackoff> for BackoffPolicy {
+    fn from(value: FibonacciBackoff) -> Self {
+        BackoffPolicy::Fibonacci(value)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::SmallRng;
     use rand::SeedableRng;
+    use rand::rngs::SmallRng;
 
     #[test]
     fn test_exponential_backoff_builder() {

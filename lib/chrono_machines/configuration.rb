@@ -11,10 +11,11 @@ module ChronoMachines
       @engine_override = nil # nil = auto-detect, :ruby = force Ruby, :native = force native
       @policies = {
         DEFAULT_POLICY_NAME => {
+          backoff_strategy: :exponential, # :exponential, :constant, or :fibonacci
           max_attempts: 3,
           base_delay: 0.1, # seconds
-          multiplier: 2,
-          max_delay: 10, # seconds
+          multiplier: 2,   # For exponential backoff
+          max_delay: 10,   # seconds
           jitter_factor: 1.0, # 1.0 = full jitter (recommended), 0.0 = no jitter
           retryable_exceptions: [StandardError],
           on_failure: nil, # Fallback block when all retries are exhausted

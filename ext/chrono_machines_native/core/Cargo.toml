@@ -1,10 +1,10 @@
 [package]
 name = "chrono-machines"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Abdelkader Boudih <terminale@gmail.com>"]
 license = "MIT"
-description = "Pure Rust exponential backoff and retry library with full jitter"
+description = "Exponential, constant, and Fibonacci backoff retry library with full jitter support - no_std compatible"
 repository = "https://github.com/seuros/chrono_machines"
 keywords = ["retry", "backoff", "exponential", "jitter", "resilience"]
 categories = ["no-std", "algorithms"]
@@ -16,7 +16,8 @@ crate-type = ["lib"]
 
 [features]
 default = ["std"]
-std = ["rand/std", "rand/std_rng"]
+std = ["alloc", "rand/std", "rand/std_rng"]
+alloc = []
 
 [dependencies]
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }

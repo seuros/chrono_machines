@@ -5,8 +5,147 @@
 
 use crate::backoff::BackoffStrategy;
 use crate::sleep::Sleeper;
-use rand::rngs::SmallRng;
+use core::fmt;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
+
+/// Reason why a retry operation failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryErrorKind {
+    /// The operation exhausted all retry attempts.
+    Exhausted,
+    /// The error was rejected by the `when` predicate.
+    PredicateRejected,
+}
+
+/// Rich retry error that carries execution context.
+#[derive(Debug, Clone)]
+pub struct RetryError<E> {
+    kind: RetryErrorKind,
+    attempts: u8,
+    max_attempts: u8,
+    last_delay_ms: Option<u64>,
+    cause: Option<E>,
+}
+
+impl<E> RetryError<E> {
+    fn new(
+        kind: RetryErrorKind,
+        attempts: u8,
+        max_attempts: u8,
+        last_delay_ms: Option<u64>,
+        cause: Option<E>,
+    ) -> Self {
+        Self {
+            kind,
+            attempts,
+            max_attempts,
+            last_delay_ms,
+            cause,
+        }
+    }
+
+    /// Retrieve the underlying cause when available.
+    pub fn cause(&self) -> Option<&E> {
+        self.cause.as_ref()
+    }
+
+    /// Consume the error and return the underlying cause when available.
+    pub fn into_cause(self) -> Option<E> {
+        self.cause
+    }
+
+    /// Attempt number that produced the terminal outcome (1-indexed).
+    pub fn attempts(&self) -> u8 {
+        self.attempts
+    }
+
+    /// Maximum attempts allowed by the policy.
+    pub fn max_attempts(&self) -> u8 {
+        self.max_attempts
+    }
+
+    /// Delay used before the last attempt (if any).
+    pub fn last_delay_ms(&self) -> Option<u64> {
+        self.last_delay_ms
+    }
+
+    /// Error category.
+    pub fn kind(&self) -> RetryErrorKind {
+        self.kind
+    }
+}
+
+impl<E> fmt::Display for RetryError<E>
+where
+    E: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            RetryErrorKind::Exhausted => {
+                write!(
+                    f,
+                    "retry exhausted after {} of {} attempts",
+                    self.attempts, self.max_attempts
+                )?;
+            }
+            RetryErrorKind::PredicateRejected => {
+                write!(f, "retry aborted by predicate on attempt {}", self.attempts)?;
+            }
+        }
+
+        if let Some(delay) = self.last_delay_ms {
+            write!(f, " (last delay {}ms)", delay)?;
+        }
+
+        if let Some(cause) = self.cause.as_ref() {
+            write!(f, ": {}", cause)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
+impl<E> std::error::Error for RetryError<E> where E: std::error::Error {}
+
+/// Successful retry result holding metadata about the execution.
+#[derive(Debug)]
+pub struct RetryOutcome<T> {
+    value: T,
+    attempts: u8,
+    cumulative_delay_ms: u64,
+}
+
+impl<T> RetryOutcome<T> {
+    fn new(value: T, attempts: u8, cumulative_delay_ms: u64) -> Self {
+        Self {
+            value,
+            attempts,
+            cumulative_delay_ms,
+        }
+    }
+
+    /// Attempt that succeeded (1-indexed).
+    pub fn attempts(&self) -> u8 {
+        self.attempts
+    }
+
+    /// Total milliseconds spent sleeping between attempts.
+    pub fn cumulative_delay_ms(&self) -> u64 {
+        self.cumulative_delay_ms
+    }
+
+    /// Borrow the successful value.
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Consume the outcome and return the successful value.
+    pub fn into_inner(self) -> T {
+        self.value
+    }
+}
 
 /// Extension trait that adds `.retry()` method to functions and closures
 ///
@@ -23,9 +162,11 @@ use rand::SeedableRng;
 /// }
 ///
 /// # #[cfg(feature = "std")]
-/// let result = fetch_data
+/// let outcome = fetch_data
 ///     .retry(ExponentialBackoff::default())
-///     .call();
+///     .call()
+///     .expect("retry succeeded");
+/// assert!(outcome.attempts() >= 1);
 /// ```
 pub trait Retryable<T, E> {
     /// Begin building a retry operation with the given backoff strategy
@@ -52,6 +193,8 @@ where
             backoff,
             when: None,
             notify: None,
+            on_success: None,
+            on_failure: None,
             _phantom_t: core::marker::PhantomData,
             _phantom_e: core::marker::PhantomData,
         }
@@ -74,7 +217,9 @@ pub struct RetryBuilder<F, B, T, E, W> {
     operation: F,
     backoff: B,
     when: Option<W>,
-    notify: Option<fn(&E, u64)>,
+    notify: Option<fn(&E, u8, u64)>,
+    on_success: Option<fn(&T, u8)>,
+    on_failure: Option<fn(&RetryError<E>)>,
     _phantom_t: core::marker::PhantomData<T>,
     _phantom_e: core::marker::PhantomData<E>,
 }
@@ -121,6 +266,8 @@ where
             backoff: self.backoff,
             when: Some(predicate),
             notify: self.notify,
+            on_success: self.on_success,
+            on_failure: self.on_failure,
             _phantom_t: core::marker::PhantomData,
             _phantom_e: core::marker::PhantomData,
         }
@@ -128,8 +275,8 @@ where
 
     /// Add a notification callback that's invoked before each retry
     ///
-    /// The callback receives the error that triggered the retry and the
-    /// delay in milliseconds before the next attempt.
+    /// The callback receives the error that triggered the retry, the attempt
+    /// number that just failed, and the delay in milliseconds before the next attempt.
     ///
     /// # Example
     ///
@@ -144,13 +291,33 @@ where
     /// # #[cfg(feature = "std")]
     /// let result = fetch_data
     ///     .retry(ExponentialBackoff::default())
-    ///     .notify(|err, delay_ms| {
-    ///         println!("Retrying after {}ms: {:?}", delay_ms, err);
+    ///     .notify(|err, attempt, delay_ms| {
+    ///         println!(
+    ///             "Attempt {} failed, retrying after {}ms: {:?}",
+    ///             attempt, delay_ms, err
+    ///         );
     ///     })
     ///     .call();
     /// ```
-    pub fn notify(mut self, callback: fn(&E, u64)) -> Self {
+    pub fn notify(mut self, callback: fn(&E, u8, u64)) -> Self {
         self.notify = Some(callback);
+        self
+    }
+
+    /// Execute a callback after a successful attempt.
+    ///
+    /// The callback receives the successful value and the attempt number that
+    /// succeeded (1-indexed).
+    pub fn on_success(mut self, callback: fn(&T, u8)) -> Self {
+        self.on_success = Some(callback);
+        self
+    }
+
+    /// Execute a callback when the retry process terminates with failure.
+    ///
+    /// The callback receives the rich [`RetryError`] describing the failure.
+    pub fn on_failure(mut self, callback: fn(&RetryError<E>)) -> Self {
+        self.on_failure = Some(callback);
         self
     }
 
@@ -173,13 +340,14 @@ where
     /// }
     ///
     /// # #[cfg(feature = "std")]
-    /// let result = fetch_data
+    /// let outcome = fetch_data
     ///     .retry(ExponentialBackoff::default())
     ///     .call()?;
-    /// # Ok::<(), std::io::Error>(())
+    /// println!("Succeeded after {} attempts", outcome.attempts());
+    /// # Ok::<(), chrono_machines::RetryError<std::io::Error>>(())
     /// ```
     #[cfg(feature = "std")]
-    pub fn call(self) -> Result<T, E> {
+    pub fn call(self) -> Result<RetryOutcome<T>, RetryError<E>> {
         use crate::sleep::StdSleeper;
         self.call_with_sleeper(StdSleeper)
     }
@@ -211,30 +379,62 @@ where
     /// #   std::thread::sleep(std::time::Duration::from_millis(ms));
     /// }
     ///
-    /// let result = fetch_data
+    /// let outcome = fetch_data
     ///     .retry(ExponentialBackoff::default())
     ///     .call_with_sleeper(FnSleeper(custom_sleep))?;
-    /// # Ok::<(), std::io::Error>(())
+    /// println!("Total delay {}ms", outcome.cumulative_delay_ms());
+    /// # Ok::<(), chrono_machines::RetryError<std::io::Error>>(())
     /// ```
-    pub fn call_with_sleeper<S: Sleeper>(mut self, sleeper: S) -> Result<T, E> {
+    pub fn call_with_sleeper<S: Sleeper>(
+        mut self,
+        sleeper: S,
+    ) -> Result<RetryOutcome<T>, RetryError<E>> {
         let mut rng = SmallRng::from_entropy();
         let mut attempt = 1u8;
+        let max_attempts = self.backoff.max_attempts();
+        let mut cumulative_delay_ms: u64 = 0;
+        let mut last_delay_ms: Option<u64> = None;
 
         loop {
             match (self.operation)() {
-                Ok(value) => return Ok(value),
+                Ok(value) => {
+                    if let Some(callback) = self.on_success {
+                        callback(&value, attempt);
+                    }
+                    return Ok(RetryOutcome::new(value, attempt, cumulative_delay_ms));
+                }
                 Err(error) => {
                     // Check if this error should be retried
                     if let Some(ref predicate) = self.when {
                         if !predicate(&error) {
                             // Error doesn't match predicate, fail immediately
-                            return Err(error);
+                            let retry_error = RetryError::new(
+                                RetryErrorKind::PredicateRejected,
+                                attempt,
+                                max_attempts,
+                                last_delay_ms,
+                                Some(error),
+                            );
+                            if let Some(callback) = self.on_failure {
+                                callback(&retry_error);
+                            }
+                            return Err(retry_error);
                         }
                     }
 
                     // Check if we have retries remaining
                     if !self.backoff.should_retry(attempt) {
-                        return Err(error);
+                        let retry_error = RetryError::new(
+                            RetryErrorKind::Exhausted,
+                            attempt,
+                            max_attempts,
+                            last_delay_ms,
+                            Some(error),
+                        );
+                        if let Some(callback) = self.on_failure {
+                            callback(&retry_error);
+                        }
+                        return Err(retry_error);
                     }
 
                     // Calculate delay
@@ -242,16 +442,28 @@ where
                         Some(delay_ms) => {
                             // Notify if callback is set
                             if let Some(notify) = self.notify {
-                                notify(&error, delay_ms);
+                                notify(&error, attempt, delay_ms);
                             }
 
                             // Sleep before retry
                             sleeper.sleep_ms(delay_ms);
-                            attempt += 1;
+                            cumulative_delay_ms = cumulative_delay_ms.saturating_add(delay_ms);
+                            last_delay_ms = Some(delay_ms);
+                            attempt = attempt.saturating_add(1);
                         }
                         None => {
                             // Backoff says no more retries
-                            return Err(error);
+                            let retry_error = RetryError::new(
+                                RetryErrorKind::Exhausted,
+                                attempt,
+                                max_attempts,
+                                last_delay_ms,
+                                Some(error),
+                            );
+                            if let Some(callback) = self.on_failure {
+                                callback(&retry_error);
+                            }
+                            return Err(retry_error);
                         }
                     }
                 }
@@ -282,7 +494,9 @@ mod tests {
             .retry(ExponentialBackoff::default())
             .call_with_sleeper(FnSleeper(|_| {}));
 
-        assert_eq!(result, Ok(42));
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 1);
+        assert_eq!(outcome.into_inner(), 42);
     }
 
     #[test]
@@ -306,7 +520,9 @@ mod tests {
             .retry(ExponentialBackoff::default().max_attempts(3))
             .call_with_sleeper(FnSleeper(|_| {}));
 
-        assert_eq!(result, Ok(42));
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 3);
+        assert_eq!(outcome.into_inner(), 42);
         assert_eq!(attempts.get(), 3);
     }
 
@@ -320,7 +536,16 @@ mod tests {
             .retry(ExponentialBackoff::default().max_attempts(3))
             .call_with_sleeper(FnSleeper(|_| {}));
 
-        assert_eq!(result, Err(TestError::Retryable));
+        let err = result.expect_err("retry should exhaust");
+        assert_eq!(err.kind(), RetryErrorKind::Exhausted);
+        assert_eq!(err.attempts(), 3);
+        assert_eq!(err.max_attempts(), 3);
+        assert!(err.last_delay_ms().is_some());
+        if let Some(cause) = err.cause() {
+            assert_eq!(cause, &TestError::Retryable);
+        } else {
+            panic!("expected underlying cause");
+        }
     }
 
     #[test]
@@ -335,7 +560,13 @@ mod tests {
             .call_with_sleeper(FnSleeper(|_| {}));
 
         // Fatal error should not be retried
-        assert_eq!(result, Err(TestError::Fatal));
+        let err = result.expect_err("retry should stop due to predicate");
+        assert_eq!(err.kind(), RetryErrorKind::PredicateRejected);
+        if let Some(cause) = err.cause() {
+            assert_eq!(cause, &TestError::Fatal);
+        } else {
+            panic!("expected underlying cause");
+        }
     }
 
     #[test]
@@ -356,9 +587,10 @@ mod tests {
         };
 
         // Custom notify that counts calls
-        fn test_notify(_: &TestError, _: u64) {
+        fn test_notify(_: &TestError, attempt: u8, _: u64) {
             // In real test would need interior mutability via Cell/RefCell
             // or external state tracking
+            assert!(attempt >= 1);
         }
 
         let result = operation
@@ -366,7 +598,73 @@ mod tests {
             .notify(test_notify)
             .call_with_sleeper(FnSleeper(|_| {}));
 
-        assert_eq!(result, Ok(42));
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 3);
+    }
+
+    #[test]
+    fn test_on_success_callback_invoked() {
+        use core::cell::Cell;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static SUCCESS_ATTEMPT: AtomicUsize = AtomicUsize::new(0);
+
+        fn on_success(_: &i32, attempt: u8) {
+            SUCCESS_ATTEMPT.store(attempt as usize, Ordering::SeqCst);
+        }
+
+        let attempts = Cell::new(0);
+
+        let operation = || {
+            let current = attempts.get();
+            attempts.set(current + 1);
+
+            if current < 1 {
+                Err(TestError::Retryable)
+            } else {
+                Ok(7)
+            }
+        };
+
+        SUCCESS_ATTEMPT.store(0, Ordering::SeqCst);
+
+        let outcome = operation
+            .retry(ExponentialBackoff::default().max_attempts(3))
+            .on_success(on_success)
+            .call_with_sleeper(FnSleeper(|_| {}))
+            .expect("retry should succeed");
+
+        assert_eq!(outcome.into_inner(), 7);
+        assert_eq!(SUCCESS_ATTEMPT.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_on_failure_callback_invoked() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        static FAILURE_KIND: AtomicUsize = AtomicUsize::new(0);
+
+        fn on_failure(err: &RetryError<TestError>) {
+            let marker = match err.kind() {
+                RetryErrorKind::Exhausted => 1,
+                RetryErrorKind::PredicateRejected => 2,
+            };
+            FAILURE_KIND.store(marker, Ordering::SeqCst);
+        }
+
+        fn always_fails() -> Result<(), TestError> {
+            Err(TestError::Retryable)
+        }
+
+        FAILURE_KIND.store(0, Ordering::SeqCst);
+
+        let result = always_fails
+            .retry(ExponentialBackoff::default().max_attempts(2))
+            .on_failure(on_failure)
+            .call_with_sleeper(FnSleeper(|_| {}));
+
+        assert!(result.is_err());
+        assert_eq!(FAILURE_KIND.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -390,7 +688,9 @@ mod tests {
             .retry(ConstantBackoff::new().delay_ms(10).max_attempts(2))
             .call_with_sleeper(FnSleeper(|_| {}));
 
-        assert_eq!(result, Ok(42));
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 2);
+        assert_eq!(outcome.into_inner(), 42);
         assert_eq!(attempts.get(), 2);
     }
 
@@ -424,7 +724,9 @@ mod tests {
 
         let elapsed = start.elapsed();
 
-        assert_eq!(result, Ok(42));
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 2);
+        assert_eq!(outcome.into_inner(), 42);
         assert!(elapsed.as_millis() >= 9); // At least one 10ms sleep
     }
 }
