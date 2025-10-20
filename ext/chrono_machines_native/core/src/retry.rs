@@ -389,7 +389,7 @@ where
         mut self,
         sleeper: S,
     ) -> Result<RetryOutcome<T>, RetryError<E>> {
-        let mut rng = SmallRng::from_entropy();
+        let mut rng = SmallRng::from_os_rng();
         let mut attempt = 1u8;
         let max_attempts = self.backoff.max_attempts();
         let mut cumulative_delay_ms: u64 = 0;

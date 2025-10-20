@@ -4,4 +4,4 @@ resolver = "2"
 
 [workspace.dependencies]
 chrono-machines = { path = "./core" }
-rand = { version = "0.8", default-features = false }
+rand = { version = "0.9", default-features = false }

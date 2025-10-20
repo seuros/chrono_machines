@@ -130,7 +130,7 @@ impl Policy {
     /// ```
     #[cfg(feature = "std")]
     pub fn calculate_delay(&self, attempt: u8, jitter_factor: f64) -> u64 {
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         self.calculate_delay_with_rng(attempt, jitter_factor, &mut rng)
     }
 
@@ -176,7 +176,7 @@ impl Policy {
         // jitter_factor of 1.0 = full jitter (0 to base), 0.0 = no jitter (exactly base)
         // Formula: base * (1 - jitter_factor + rand * jitter_factor)
         // Example with jitter_factor=0.1: base * (0.9 + rand*0.1) = 90% to 100% of base
-        let random_scalar: f64 = rng.gen_range(0.0..=1.0);
+        let random_scalar: f64 = rng.random_range(0.0..=1.0);
         let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
         let jittered = capped * jitter_blend;
 

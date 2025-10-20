@@ -125,7 +125,7 @@ impl BackoffStrategy for ExponentialBackoff {
         let capped = base_exponential.min(self.max_delay_ms as f64);
 
         // Apply jitter blend
-        let random_scalar: f64 = rng.gen_range(0.0..=1.0);
+        let random_scalar: f64 = rng.random_range(0.0..=1.0);
         let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
         let jittered = capped * jitter_blend;
 
@@ -210,7 +210,7 @@ impl BackoffStrategy for ConstantBackoff {
         let base = self.delay_ms as f64;
 
         // Apply jitter blend
-        let random_scalar: f64 = rng.gen_range(0.0..=1.0);
+        let random_scalar: f64 = rng.random_range(0.0..=1.0);
         let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
         let jittered = base * jitter_blend;
 
@@ -325,7 +325,7 @@ impl BackoffStrategy for FibonacciBackoff {
         let base = ((self.base_delay_ms as f64) * (fib as f64)).min(self.max_delay_ms as f64);
 
         // Apply jitter blend
-        let random_scalar: f64 = rng.gen_range(0.0..=1.0);
+        let random_scalar: f64 = rng.random_range(0.0..=1.0);
         let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
         let jittered = base * jitter_blend;
 

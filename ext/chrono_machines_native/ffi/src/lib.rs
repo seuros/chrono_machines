@@ -10,7 +10,7 @@ use std::cell::RefCell;
 
 // Thread-local RNG for performance (avoids reseeding from entropy on every call)
 thread_local! {
-    static RNG: RefCell<SmallRng> = RefCell::new(SmallRng::from_entropy());
+    static RNG: RefCell<SmallRng> = RefCell::new(SmallRng::from_os_rng());
 }
 
 /// Calculate delay using exponential backoff with configurable jitter
@@ -111,7 +111,7 @@ fn normalize_jitter(jitter_factor: f64) -> f64 {
 fn apply_jitter(base: f64, jitter_factor: f64) -> f64 {
     RNG.with(|rng| {
         let mut rng = rng.borrow_mut();
-        let random_scalar: f64 = rng.gen_range(0.0..=1.0);
+        let random_scalar: f64 = rng.random_range(0.0..=1.0);
         let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
         base * jitter_blend
     })
