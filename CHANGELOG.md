@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.4.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.3.0...chrono_machines/v0.4.0) (2025-10-20)
+
+
+### Features
+
+* add constant and fibonacci backoff strategies with native acceleration ([582ba9c](https://github.com/seuros/chrono_machines/commit/582ba9ccd84072ec4ccf5d3340eced27cc4d1925))
+
 ## [0.3.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.2.0...chrono_machines/v0.3.0) (2025-10-14)
 
 
