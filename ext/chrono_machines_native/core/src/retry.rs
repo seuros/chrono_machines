@@ -6,8 +6,11 @@
 use crate::backoff::BackoffStrategy;
 use crate::sleep::Sleeper;
 use core::fmt;
-use rand::SeedableRng;
 use rand::rngs::SmallRng;
+use rand::SeedableRng;
+
+/// Type alias for retry builder with default predicate
+type DefaultRetryBuilder<F, B, T, E> = RetryBuilder<F, B, T, E, fn(&E) -> bool>;
 
 /// Reason why a retry operation failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,7 +181,7 @@ pub trait Retryable<T, E> {
     /// # Returns
     ///
     /// A `RetryBuilder` that can be further configured before execution
-    fn retry<B: BackoffStrategy>(self, backoff: B) -> RetryBuilder<Self, B, T, E, fn(&E) -> bool>
+    fn retry<B: BackoffStrategy>(self, backoff: B) -> DefaultRetryBuilder<Self, B, T, E>
     where
         Self: Sized;
 }
@@ -405,8 +408,8 @@ where
                 }
                 Err(error) => {
                     // Check if this error should be retried
-                    if let Some(ref predicate) = self.when {
-                        if !predicate(&error) {
+                    if let Some(ref predicate) = self.when
+                        && !predicate(&error) {
                             // Error doesn't match predicate, fail immediately
                             let retry_error = RetryError::new(
                                 RetryErrorKind::PredicateRejected,
@@ -420,7 +423,6 @@ where
                             }
                             return Err(retry_error);
                         }
-                    }
 
                     // Check if we have retries remaining
                     if !self.backoff.should_retry(attempt) {
