@@ -413,8 +413,8 @@ impl From<FibonacciBackoff> for BackoffPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
     use rand::rngs::SmallRng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_exponential_backoff_builder() {

@@ -3,6 +3,9 @@
 //! This crate provides a Magnus-based Ruby binding for the chrono_machines library.
 //! It exposes a simple helper function for calculating delays with exponential backoff.
 
+#![warn(rust_2024_compatibility)]
+#![warn(clippy::all)]
+
 use magnus::{function, Error, Ruby};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -32,7 +35,7 @@ fn calculate_delay_exponential(
     jitter_factor: f64,
 ) -> f64 {
     let jitter_factor = normalize_jitter(jitter_factor);
-    let attempt_u8 = attempt.min(255).max(1) as u8;
+    let attempt_u8 = attempt.clamp(1, 255) as u8;
     let exponent = attempt_u8.saturating_sub(1) as i32;
 
     let base_exponential = base_delay * multiplier.powi(exponent);
@@ -72,7 +75,7 @@ fn calculate_delay_fibonacci(
     jitter_factor: f64,
 ) -> f64 {
     let jitter_factor = normalize_jitter(jitter_factor);
-    let attempt_u8 = attempt.min(255).max(1) as u8;
+    let attempt_u8 = attempt.clamp(1, 255) as u8;
 
     let fib = fibonacci(attempt_u8);
     let base = (base_delay * fib as f64).min(max_delay);

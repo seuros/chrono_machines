@@ -18,8 +18,11 @@ crate-type = ["lib"]
 default = ["std"]
 std = ["alloc", "rand/std", "rand/std_rng"]
 alloc = []
+async = ["std", "dep:async-trait"]
 
 [dependencies]
 rand = { version = "0.9", default-features = false, features = ["small_rng", "os_rng"] }
+async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros", "time"] }

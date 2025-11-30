@@ -80,7 +80,7 @@ impl PolicyRegistry {
 
     /// Return all registered policies as `(name, policy)` tuples.
     pub fn all(&self) -> Vec<(String, BackoffPolicy)> {
-        self.entries.iter().cloned().collect()
+        self.entries.to_vec()
     }
 
     /// Clear the registry.

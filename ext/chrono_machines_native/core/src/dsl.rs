@@ -8,6 +8,9 @@ use crate::policy::get_global_policy;
 use crate::retry::{RetryBuilder, RetryError, RetryOutcome, Retryable};
 use std::fmt;
 
+/// Type alias for retry builder with policy from global registry
+type PolicyRetryBuilder<F, T, E> = RetryBuilder<F, BackoffPolicy, T, E, fn(&E) -> bool>;
+
 /// Errors produced by the DSL helpers.
 #[derive(Debug)]
 pub enum DslError<E> {
@@ -41,7 +44,7 @@ impl<E> std::error::Error for DslError<E> where E: fmt::Display + std::error::Er
 pub fn builder_for_policy<F, T, E>(
     policy_name: &str,
     operation: F,
-) -> Result<RetryBuilder<F, BackoffPolicy, T, E, fn(&E) -> bool>, DslError<E>>
+) -> Result<PolicyRetryBuilder<F, T, E>, DslError<E>>
 where
     F: FnMut() -> Result<T, E>,
 {

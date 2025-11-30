@@ -28,6 +28,8 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![warn(rust_2024_compatibility)]
+#![warn(clippy::all)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -44,7 +46,7 @@ pub use backoff::{
     BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff,
 };
 #[cfg(feature = "std")]
-pub use dsl::{DslError, builder_for_policy, retry_with_policy};
+pub use dsl::{builder_for_policy, retry_with_policy, DslError};
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub use policy::PolicyRegistry;
 #[cfg(feature = "std")]
@@ -52,15 +54,15 @@ pub use policy::{
     clear_global_policies, get_global_policy, list_global_policies, register_global_policy,
     remove_global_policy,
 };
-pub use retry::{RetryBuilder, RetryError, RetryOutcome, Retryable};
+pub use retry::{RetryBuilder, RetryContext, RetryError, RetryOutcome, Retryable, RetryableExt};
 #[cfg(feature = "std")]
 pub use sleep::StdSleeper;
 pub use sleep::{FnSleeper, Sleeper};
 
 #[cfg(feature = "std")]
-use rand::SeedableRng;
-#[cfg(feature = "std")]
 use rand::rngs::StdRng;
+#[cfg(feature = "std")]
+use rand::SeedableRng;
 
 use rand::Rng;
 
@@ -206,8 +208,8 @@ impl Default for Policy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
     use rand::rngs::SmallRng;
+    use rand::SeedableRng;
 
     #[test]
     fn test_policy_default() {
