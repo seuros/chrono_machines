@@ -54,7 +54,7 @@ pub use policy::{
     clear_global_policies, get_global_policy, list_global_policies, register_global_policy,
     remove_global_policy,
 };
-pub use retry::{RetryBuilder, RetryError, RetryOutcome, Retryable};
+pub use retry::{RetryBuilder, RetryContext, RetryError, RetryOutcome, Retryable, RetryableExt};
 #[cfg(feature = "std")]
 pub use sleep::StdSleeper;
 pub use sleep::{FnSleeper, Sleeper};

@@ -16,3 +16,7 @@ Gemfile.lock
 /ext/**/mkmf.log
 /ext/**/.sitearchdir.time
 /ext/**/Cargo.lock
+*.bundle
+*.dSYM
+*.so
+*.dylib
