@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 chrono-machines = { workspace = true, features = ["std"] }
-magnus = { version = "0.8", features = ["embed"] }
+magnus = { version = "0.8.2", features = ["embed"] }
 rand = { workspace = true }
 
 [features]
