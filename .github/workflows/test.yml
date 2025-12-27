@@ -10,7 +10,7 @@ jobs:
   test-rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - name: Run Rust core tests
         run: |
@@ -28,7 +28,7 @@ jobs:
       matrix:
         ruby-version: ['3.4', '4.0.0-preview3']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Set up Ruby ${{ matrix.ruby-version }}
@@ -44,9 +44,9 @@ jobs:
     needs: test-mri
     strategy:
       matrix:
-        ruby-version: ['jruby-10.0.0.1', 'truffleruby']
+        ruby-version: ['jruby-10.0.2.0', 'truffleruby']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
