@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ruby-version: ['3.4', '4.0.0-preview3']
+        ruby-version: ['3.4', '4.0']
     steps:
       - uses: actions/checkout@v6
       - name: Set up Rust
