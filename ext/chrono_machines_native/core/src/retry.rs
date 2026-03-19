@@ -6,8 +6,7 @@
 use crate::backoff::BackoffStrategy;
 use crate::sleep::Sleeper;
 use core::fmt;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 /// Type alias for retry builder with default predicate
 type DefaultRetryBuilder<F, B, T, E> = RetryBuilder<F, B, T, E, fn(&E) -> bool>;
@@ -552,7 +551,7 @@ where
         mut self,
         sleeper: S,
     ) -> Result<RetryOutcome<T>, RetryError<E>> {
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: StdRng = rand::make_rng();
         let mut attempt = 1u8;
         let max_attempts = self.backoff.max_attempts();
         let mut cumulative_delay_ms: u64 = 0;

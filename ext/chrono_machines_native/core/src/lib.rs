@@ -61,8 +61,7 @@ pub use sleep::{FnSleeper, Sleeper};
 
 #[cfg(feature = "std")]
 use rand::rngs::StdRng;
-#[cfg(feature = "std")]
-use rand::SeedableRng;
+use rand::RngExt;
 
 use rand::Rng;
 
@@ -132,7 +131,7 @@ impl Policy {
     /// ```
     #[cfg(feature = "std")]
     pub fn calculate_delay(&self, attempt: u8, jitter_factor: f64) -> u64 {
-        let mut rng = StdRng::from_os_rng();
+        let mut rng: StdRng = rand::make_rng();
         self.calculate_delay_with_rng(attempt, jitter_factor, &mut rng)
     }
 
@@ -208,7 +207,7 @@ impl Default for Policy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::SmallRng;
+    use rand::rngs::StdRng;
     use rand::SeedableRng;
 
     #[test]
@@ -229,7 +228,7 @@ mod tests {
             max_delay_ms: 1000,
         };
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         // First attempt with full jitter: delay should be between 0 and 100ms
         let delay1 = policy.calculate_delay_with_rng(1, 1.0, &mut rng);
@@ -266,7 +265,7 @@ mod tests {
             max_delay_ms: 500,
         };
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         // High attempt number should still be capped
         let delay = policy.calculate_delay_with_rng(10, 1.0, &mut rng);
@@ -282,7 +281,7 @@ mod tests {
             max_delay_ms: 10_000,
         };
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         // All delays with full jitter should be between 0 and base_delay_ms
         for attempt in 1..=5 {
@@ -300,7 +299,7 @@ mod tests {
             max_delay_ms: 10_000,
         };
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         // 10% jitter: delay should be between 900ms (90%) and 1000ms (100%)
         let delay = policy.calculate_delay_with_rng(1, 0.1, &mut rng);
@@ -328,7 +327,7 @@ mod tests {
             max_delay_ms: 10_000,
         };
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         // Negative jitter_factor should be clamped to 0.0
         let delay = policy.calculate_delay_with_rng(1, -0.5, &mut rng);

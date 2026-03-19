@@ -4,6 +4,7 @@
 //! between retry attempts.
 
 use rand::Rng;
+use rand::RngExt;
 
 /// Trait for backoff strategies that calculate delays between retry attempts
 pub trait BackoffStrategy {
@@ -413,7 +414,7 @@ impl From<FibonacciBackoff> for BackoffPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::SmallRng;
+    use rand::rngs::StdRng;
     use rand::SeedableRng;
 
     #[test]
@@ -439,7 +440,7 @@ mod tests {
             .multiplier(2.0)
             .jitter_factor(0.0); // No jitter for predictable testing
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         assert_eq!(backoff.delay(1, &mut rng), Some(100));
         assert_eq!(backoff.delay(2, &mut rng), Some(200));
@@ -453,7 +454,7 @@ mod tests {
             .max_attempts(4)
             .jitter_factor(0.0);
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         assert_eq!(backoff.delay(1, &mut rng), Some(500));
         assert_eq!(backoff.delay(2, &mut rng), Some(500));
@@ -479,7 +480,7 @@ mod tests {
             .max_attempts(5)
             .jitter_factor(0.0);
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         assert_eq!(backoff.delay(1, &mut rng), Some(100)); // 100 * 1
         assert_eq!(backoff.delay(2, &mut rng), Some(100)); // 100 * 1
@@ -492,7 +493,7 @@ mod tests {
     fn test_jitter_application() {
         let backoff = ConstantBackoff::new().delay_ms(1000).jitter_factor(1.0); // Full jitter
 
-        let mut rng = SmallRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
         let delays: Vec<u64> = (1..10).filter_map(|i| backoff.delay(i, &mut rng)).collect();
 
         // With full jitter, delays should vary

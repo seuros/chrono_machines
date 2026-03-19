@@ -7,13 +7,13 @@
 #![warn(clippy::all)]
 
 use magnus::{function, Error, Ruby};
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
+use rand::RngExt;
 use std::cell::RefCell;
 
 // Thread-local RNG for performance (avoids reseeding from entropy on every call)
 thread_local! {
-    static RNG: RefCell<SmallRng> = RefCell::new(SmallRng::from_os_rng());
+    static RNG: RefCell<StdRng> = RefCell::new(rand::make_rng());
 }
 
 /// Calculate delay using exponential backoff with configurable jitter
@@ -143,11 +143,12 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
 
     #[test]
     fn test_exponential_delay() {
         RNG.with(|rng| {
-            *rng.borrow_mut() = SmallRng::seed_from_u64(1337);
+            *rng.borrow_mut() = StdRng::seed_from_u64(1337);
         });
 
         let delay = calculate_delay_exponential(1, 0.0004, 1.0, 0.001, 0.5);
@@ -161,7 +162,7 @@ mod tests {
     #[test]
     fn test_constant_delay() {
         RNG.with(|rng| {
-            *rng.borrow_mut() = SmallRng::seed_from_u64(42);
+            *rng.borrow_mut() = StdRng::seed_from_u64(42);
         });
 
         // Constant delay with 10% jitter should be 90-100% of base
@@ -176,7 +177,7 @@ mod tests {
     #[test]
     fn test_fibonacci_delay() {
         RNG.with(|rng| {
-            *rng.borrow_mut() = SmallRng::seed_from_u64(123);
+            *rng.borrow_mut() = StdRng::seed_from_u64(123);
         });
 
         // Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13...

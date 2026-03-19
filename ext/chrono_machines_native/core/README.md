@@ -44,11 +44,11 @@ println!("Wait {}ms before retry", delay_ms);
 
 ```rust
 use chrono_machines::Policy;
-use rand::rngs::SmallRng;
+use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 let policy = Policy::default();
-let mut rng = SmallRng::seed_from_u64(12345);
+let mut rng = StdRng::seed_from_u64(12345);
 
 // Calculate delay with 50% jitter (0.5)
 let delay = policy.calculate_delay_with_rng(1, 0.5, &mut rng);
