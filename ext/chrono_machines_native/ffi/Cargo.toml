@@ -12,7 +12,7 @@ name = "chrono_machines_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-chrono-machines = { workspace = true, features = ["std"] }
+chrono-machines = { version = "0.3.1", path = "../core", features = ["std"] }
 magnus = { version = "0.8.2", features = ["embed"] }
 rand = { workspace = true }
 rb-sys = { version = "0.9.117", default-features = false, features = ["stable-api-compiled-fallback"] }
