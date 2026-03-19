@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.3.0...chrono-machines-v0.3.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* **native:** upgrade rand to 0.10 ([#10](https://github.com/seuros/chrono_machines/issues/10)) ([d7e2738](https://github.com/seuros/chrono_machines/commit/d7e2738552a98e4f528055f671cfdfbdb02b0c7a))
+
 ## [0.3.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.2.1...chrono-machines-v0.3.0) (2025-12-19)
 
 
