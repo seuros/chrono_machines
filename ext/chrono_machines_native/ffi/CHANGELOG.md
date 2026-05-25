@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.2.1...chrono_machines_native-v0.2.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* remove unused Magnus embed feature ([3b0877a](https://github.com/seuros/chrono_machines/commit/3b0877a11f768a135c877980320cae53fa58cd3d))
+
 ## [0.2.1](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.2.0...chrono_machines_native-v0.2.1) (2026-03-19)
 
 
