@@ -6,6 +6,35 @@
 use rand::Rng;
 use rand::RngExt;
 
+/// Calculate the nth Fibonacci number (1-indexed): 1, 1, 2, 3, 5, 8, 13, ...
+pub fn fibonacci(n: u8) -> u64 {
+    match n {
+        0 => 0,
+        1 | 2 => 1,
+        _ => {
+            let mut a = 1u64;
+            let mut b = 1u64;
+            for _ in 2..n {
+                let next = a.saturating_add(b);
+                a = b;
+                b = next;
+            }
+            b
+        }
+    }
+}
+
+/// Blend a base delay with jitter using the full-jitter algorithm.
+///
+/// `jitter_factor` is clamped to `[0.0, 1.0]`: `0.0` returns `base` unchanged,
+/// `1.0` yields a uniform value in `[0, base]`.
+fn apply_jitter<R: Rng>(base: f64, jitter_factor: f64, rng: &mut R) -> u64 {
+    let jitter_factor = jitter_factor.clamp(0.0, 1.0);
+    let random_scalar: f64 = rng.random_range(0.0..=1.0);
+    let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
+    (base * jitter_blend) as u64
+}
+
 /// Trait for backoff strategies that calculate delays between retry attempts
 pub trait BackoffStrategy {
     /// Calculate the delay in milliseconds for the given attempt number
@@ -120,17 +149,11 @@ impl BackoffStrategy for ExponentialBackoff {
             return None;
         }
 
-        let jitter_factor = self.jitter_factor.clamp(0.0, 1.0);
         let exponent = attempt.saturating_sub(1) as i32;
         let base_exponential = (self.base_delay_ms as f64) * self.multiplier.powi(exponent);
         let capped = base_exponential.min(self.max_delay_ms as f64);
 
-        // Apply jitter blend
-        let random_scalar: f64 = rng.random_range(0.0..=1.0);
-        let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
-        let jittered = capped * jitter_blend;
-
-        Some(jittered as u64)
+        Some(apply_jitter(capped, self.jitter_factor, rng))
     }
 
     fn should_retry(&self, attempt: u8) -> bool {
@@ -207,15 +230,7 @@ impl BackoffStrategy for ConstantBackoff {
             return None;
         }
 
-        let jitter_factor = self.jitter_factor.clamp(0.0, 1.0);
-        let base = self.delay_ms as f64;
-
-        // Apply jitter blend
-        let random_scalar: f64 = rng.random_range(0.0..=1.0);
-        let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
-        let jittered = base * jitter_blend;
-
-        Some(jittered as u64)
+        Some(apply_jitter(self.delay_ms as f64, self.jitter_factor, rng))
     }
 
     fn should_retry(&self, attempt: u8) -> bool {
@@ -284,24 +299,6 @@ impl FibonacciBackoff {
         self.jitter_factor = factor.clamp(0.0, 1.0);
         self
     }
-
-    /// Calculate the nth Fibonacci number (1-indexed)
-    fn fibonacci(n: u8) -> u64 {
-        match n {
-            0 => 0,
-            1 | 2 => 1,
-            _ => {
-                let mut a = 1u64;
-                let mut b = 1u64;
-                for _ in 2..n {
-                    let next = a.saturating_add(b);
-                    a = b;
-                    b = next;
-                }
-                b
-            }
-        }
-    }
 }
 
 impl Default for FibonacciBackoff {
@@ -321,16 +318,10 @@ impl BackoffStrategy for FibonacciBackoff {
             return None;
         }
 
-        let jitter_factor = self.jitter_factor.clamp(0.0, 1.0);
-        let fib = Self::fibonacci(attempt);
+        let fib = fibonacci(attempt);
         let base = ((self.base_delay_ms as f64) * (fib as f64)).min(self.max_delay_ms as f64);
 
-        // Apply jitter blend
-        let random_scalar: f64 = rng.random_range(0.0..=1.0);
-        let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
-        let jittered = base * jitter_blend;
-
-        Some(jittered as u64)
+        Some(apply_jitter(base, self.jitter_factor, rng))
     }
 
     fn should_retry(&self, attempt: u8) -> bool {
@@ -464,13 +455,13 @@ mod tests {
 
     #[test]
     fn test_fibonacci_sequence() {
-        assert_eq!(FibonacciBackoff::fibonacci(1), 1);
-        assert_eq!(FibonacciBackoff::fibonacci(2), 1);
-        assert_eq!(FibonacciBackoff::fibonacci(3), 2);
-        assert_eq!(FibonacciBackoff::fibonacci(4), 3);
-        assert_eq!(FibonacciBackoff::fibonacci(5), 5);
-        assert_eq!(FibonacciBackoff::fibonacci(6), 8);
-        assert_eq!(FibonacciBackoff::fibonacci(7), 13);
+        assert_eq!(fibonacci(1), 1);
+        assert_eq!(fibonacci(2), 1);
+        assert_eq!(fibonacci(3), 2);
+        assert_eq!(fibonacci(4), 3);
+        assert_eq!(fibonacci(5), 5);
+        assert_eq!(fibonacci(6), 8);
+        assert_eq!(fibonacci(7), 13);
     }
 
     #[test]

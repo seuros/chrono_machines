@@ -17,6 +17,22 @@ type NotifyCallback<E> = Box<dyn FnMut(&RetryContext<E>)>;
 /// Type alias for boxed failure callback
 type FailureCallback<E> = Box<dyn FnMut(&RetryError<E>)>;
 
+/// Build a terminal [`RetryError`], firing the `on_failure` callback if present.
+fn finalize_failure<E>(
+    on_failure: Option<&mut FailureCallback<E>>,
+    kind: RetryErrorKind,
+    attempt: u8,
+    max_attempts: u8,
+    cumulative_delay_ms: u64,
+    error: E,
+) -> RetryError<E> {
+    let retry_error = RetryError::new(kind, attempt, max_attempts, cumulative_delay_ms, Some(error));
+    if let Some(callback) = on_failure {
+        callback(&retry_error);
+    }
+    retry_error
+}
+
 /// Reason why a retry operation failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryErrorKind {
@@ -576,32 +592,26 @@ where
                     if let Some(ref predicate) = self.when
                         && !predicate(&error) {
                             // Error doesn't match predicate, fail immediately
-                            let retry_error = RetryError::new(
+                            return Err(finalize_failure(
+                                self.on_failure.as_mut(),
                                 RetryErrorKind::PredicateRejected,
                                 attempt,
                                 max_attempts,
                                 cumulative_delay_ms,
-                                Some(error),
-                            );
-                            if let Some(ref mut callback) = self.on_failure {
-                                callback(&retry_error);
-                            }
-                            return Err(retry_error);
+                                error,
+                            ));
                         }
 
                     // Check if we have retries remaining
                     if !self.backoff.should_retry(attempt) {
-                        let retry_error = RetryError::new(
+                        return Err(finalize_failure(
+                            self.on_failure.as_mut(),
                             RetryErrorKind::Exhausted,
                             attempt,
                             max_attempts,
                             cumulative_delay_ms,
-                            Some(error),
-                        );
-                        if let Some(ref mut callback) = self.on_failure {
-                            callback(&retry_error);
-                        }
-                        return Err(retry_error);
+                            error,
+                        ));
                     }
 
                     // Calculate delay
@@ -625,17 +635,14 @@ where
                         }
                         None => {
                             // Backoff says no more retries
-                            let retry_error = RetryError::new(
+                            return Err(finalize_failure(
+                                self.on_failure.as_mut(),
                                 RetryErrorKind::Exhausted,
                                 attempt,
                                 max_attempts,
                                 cumulative_delay_ms,
-                                Some(error),
-                            );
-                            if let Some(ref mut callback) = self.on_failure {
-                                callback(&retry_error);
-                            }
-                            return Err(retry_error);
+                                error,
+                            ));
                         }
                     }
                 }

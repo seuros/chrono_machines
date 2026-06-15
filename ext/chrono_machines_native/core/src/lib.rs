@@ -43,7 +43,8 @@ pub mod retry;
 pub mod sleep;
 
 pub use backoff::{
-    BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff,
+    fibonacci, BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff,
+    FibonacciBackoff,
 };
 #[cfg(feature = "std")]
 pub use dsl::{builder_for_policy, retry_with_policy, DslError};

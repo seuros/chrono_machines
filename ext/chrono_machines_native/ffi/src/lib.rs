@@ -6,6 +6,7 @@
 #![warn(rust_2024_compatibility)]
 #![warn(clippy::all)]
 
+use chrono_machines::fibonacci;
 use magnus::{function, Error, Ruby};
 use rand::rngs::StdRng;
 use rand::RngExt;
@@ -81,24 +82,6 @@ fn calculate_delay_fibonacci(
     let base = (base_delay * fib as f64).min(max_delay);
 
     apply_jitter(base, jitter_factor)
-}
-
-/// Calculate the nth Fibonacci number (1-indexed)
-fn fibonacci(n: u8) -> u64 {
-    match n {
-        0 => 0,
-        1 | 2 => 1,
-        _ => {
-            let mut a = 1u64;
-            let mut b = 1u64;
-            for _ in 2..n {
-                let next = a.saturating_add(b);
-                a = b;
-                b = next;
-            }
-            b
-        }
-    }
 }
 
 /// Normalize jitter factor to [0.0, 1.0] range
