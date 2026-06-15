@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.3.1...chrono-machines-v0.3.2) (2026-06-15)
+
+
+### Bug Fixes
+
+* **native:** deduplicate backoff jitter, fibonacci, and retry-failure logic ([46f861a](https://github.com/seuros/chrono_machines/commit/46f861acc7e29024fc35dafb39aaec22db33440d))
+
 ## [0.3.1](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.3.0...chrono-machines-v0.3.1) (2026-03-19)
 
 
