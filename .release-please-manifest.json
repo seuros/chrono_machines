@@ -1,5 +1,5 @@
 {
-  ".": "0.4.3",
+  ".": "0.4.4",
   "ext/chrono_machines_native/core": "0.3.2",
   "ext/chrono_machines_native/ffi": "0.2.3"
 }

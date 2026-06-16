@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.4.4](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.4.3...chrono_machines/v0.4.4) (2026-06-16)
+
+
+### Bug Fixes
+
+* Upgrade setup-java action to version 5 ([f6dcecc](https://github.com/seuros/chrono_machines/commit/f6dcecc233d4d4f74bacad8bfe893eff981a4737))
+
 ## [0.4.3](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.4.2...chrono_machines/v0.4.3) (2026-06-15)
 
 
