@@ -17,13 +17,19 @@ Gem::Specification.new do |spec|
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.3.0'
 
-  spec.metadata['allowed_push_host'] = ENV.fetch('GEM_HOST', 'https://rubygems.org')
+  # The generic `ruby` platform gem is pure source; native binaries ship only in
+  # the platform gems cross-compiled by rb_sys.
+  spec.platform = Gem::Platform::RUBY
 
+  # Note: allowed_push_host intentionally omitted so platform gems can be pushed
+  # to both RubyGems.org and GitHub Packages.
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/seuros/chrono_machines'
   spec.metadata['changelog_uri'] = 'https://github.com/seuros/chrono_machines/blob/main/CHANGELOG.md'
   spec.metadata['github_repo'] = 'ssh://github.com/seuros/chrono_machines'
   spec.metadata['rubygems_mfa_required'] = 'true'
+  spec.metadata['cargo_crate_name'] = 'chrono_machines_native'
+  spec.metadata['cargo_manifest_path'] = 'ext/chrono_machines_native/ffi/Cargo.toml'
 
   spec.files = Dir.glob(%w[
                           lib/**/*.rb
@@ -33,6 +39,7 @@ Gem::Specification.new do |spec|
                           CHANGELOG.md
                           LICENSE.txt
                         ]).select { |f| File.exist?(f) }
+                   .reject { |f| f =~ /\.(bundle|so|dll)\z/ }
   spec.require_paths = ['lib']
 
   # Add native extension (only on CRuby/TruffleRuby)

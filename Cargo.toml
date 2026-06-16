@@ -1,0 +1,7 @@
+[workspace]
+members = ["ext/chrono_machines_native/core", "ext/chrono_machines_native/ffi"]
+resolver = "2"
+
+[workspace.dependencies]
+chrono-machines = { path = "ext/chrono_machines_native/core" }
+rand = { version = "0.10", default-features = false, features = ["std_rng", "sys_rng"] }

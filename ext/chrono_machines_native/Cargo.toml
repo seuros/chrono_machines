@@ -1,7 +1,0 @@
-[workspace]
-members = ["core", "ffi"]
-resolver = "2"
-
-[workspace.dependencies]
-chrono-machines = { path = "./core" }
-rand = { version = "0.10", default-features = false, features = ["std_rng", "sys_rng"] }
