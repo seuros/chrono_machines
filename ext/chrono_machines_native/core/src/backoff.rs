@@ -6,6 +6,25 @@
 use rand::Rng;
 use rand::RngExt;
 
+/// `f64::powi`, implemented by hand so it works in `core` (`no_std`).
+#[inline]
+pub(crate) fn powi_f64(base: f64, exp: i32) -> f64 {
+    if exp == 0 {
+        return 1.0;
+    }
+    let mut acc = 1.0_f64;
+    let mut factor = if exp < 0 { 1.0 / base } else { base };
+    let mut n = exp.unsigned_abs();
+    while n > 0 {
+        if n & 1 == 1 {
+            acc *= factor;
+        }
+        factor *= factor;
+        n >>= 1;
+    }
+    acc
+}
+
 /// Calculate the nth Fibonacci number (1-indexed): 1, 1, 2, 3, 5, 8, 13, ...
 pub fn fibonacci(n: u8) -> u64 {
     match n {
@@ -150,7 +169,7 @@ impl BackoffStrategy for ExponentialBackoff {
         }
 
         let exponent = attempt.saturating_sub(1) as i32;
-        let base_exponential = (self.base_delay_ms as f64) * self.multiplier.powi(exponent);
+        let base_exponential = (self.base_delay_ms as f64) * powi_f64(self.multiplier, exponent);
         let capped = base_exponential.min(self.max_delay_ms as f64);
 
         Some(apply_jitter(capped, self.jitter_factor, rng))

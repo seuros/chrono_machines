@@ -613,6 +613,6 @@ MIT License. See [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Built with time and coffee by temporal engineers fighting entropy one retry at a time.
+Built with time and Brawndo (it's got electrolytes) by temporal engineers fighting entropy one retry at a time.
 
 **Remember: In the fabric of spacetime, nobody can hear your API timeout. But they can feel your exponential backoff working as intended.**

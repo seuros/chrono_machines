@@ -6,7 +6,11 @@
 use crate::backoff::BackoffStrategy;
 use crate::sleep::Sleeper;
 use core::fmt;
+#[cfg(feature = "std")]
 use rand::rngs::StdRng;
+
+#[cfg(all(not(feature = "std"), feature = "alloc"))]
+use alloc::boxed::Box;
 
 /// Type alias for retry builder with default predicate
 type DefaultRetryBuilder<F, B, T, E> = RetryBuilder<F, B, T, E, fn(&E) -> bool>;
@@ -563,11 +567,29 @@ where
     /// println!("Total delay {}ms", outcome.cumulative_delay_ms());
     /// # Ok::<(), chrono_machines::RetryError<std::io::Error>>(())
     /// ```
+    #[cfg(feature = "std")]
     pub fn call_with_sleeper<S: Sleeper>(
-        mut self,
+        self,
         sleeper: S,
     ) -> Result<RetryOutcome<T>, RetryError<E>> {
-        let mut rng: StdRng = rand::make_rng();
+        let rng: StdRng = rand::make_rng();
+        self.call_with_sleeper_and_rng(sleeper, rng)
+    }
+
+    /// Execute the retry operation with a custom sleeper and a caller-supplied RNG.
+    ///
+    /// The `no_std` entry point: callers provide their own [`rand::Rng`] instead
+    /// of relying on the `std`-only `make_rng`.
+    ///
+    /// # Arguments
+    ///
+    /// * `sleeper` - Implementation of the [`Sleeper`] trait
+    /// * `rng` - Random number generator used for jitter
+    pub fn call_with_sleeper_and_rng<S: Sleeper, R: rand::Rng>(
+        mut self,
+        sleeper: S,
+        mut rng: R,
+    ) -> Result<RetryOutcome<T>, RetryError<E>> {
         let mut attempt = 1u8;
         let max_attempts = self.backoff.max_attempts();
         let mut cumulative_delay_ms: u64 = 0;

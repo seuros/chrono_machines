@@ -145,16 +145,33 @@ Disable default features for `no_std` environments:
 chrono_machines = { version = "0.2", default-features = false }
 ```
 
-You'll need to provide your own RNG and use `calculate_delay_with_rng()`.
+Pure `no_std` (no allocator) gives you the delay math (`Policy`,
+`ExponentialBackoff`/`ConstantBackoff`/`FibonacciBackoff`) and the `Sleeper`
+trait. There's no OS entropy, so provide your own `rand::Rng` and use
+`calculate_delay_with_rng()` / `BackoffStrategy::delay()`.
 
 ### `alloc`
 
-Enable the lightweight, vector-backed `PolicyRegistry` without the standard
-library:
+Add `alloc` for the fluent `RetryBuilder` (its callbacks are boxed) and the
+vector-backed `PolicyRegistry`, all without `std`:
 
 ```toml
 [dependencies]
 chrono_machines = { version = "0.2", default-features = false, features = ["alloc"] }
+```
+
+Drive a retry loop with a caller-supplied sleeper and RNG:
+
+```rust
+use chrono_machines::{ExponentialBackoff, Retryable};
+use rand::{rngs::StdRng, SeedableRng};
+
+let sleeper = chrono_machines::sleep::FnSleeper(|_ms| { /* embedded delay */ });
+let rng = StdRng::seed_from_u64(0xC0FFEE);
+
+let outcome = operation
+    .retry(ExponentialBackoff::default().max_attempts(5))
+    .call_with_sleeper_and_rng(sleeper, rng);
 ```
 
 ## Backoff Strategies
