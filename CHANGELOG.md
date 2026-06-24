@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.4.4...chrono_machines/v0.5.0) (2026-06-24)
+
+
+### Features
+
+* **native:** make core crate no_std capable ([#15](https://github.com/seuros/chrono_machines/issues/15)) ([76129a3](https://github.com/seuros/chrono_machines/commit/76129a31ad75142641e4a29a82424ad26fb9ecd6))
+
+
+### Bug Fixes
+
+* **native:** use workspace dependency for chrono-machines in ffi ([fdeca2f](https://github.com/seuros/chrono_machines/commit/fdeca2f938e2647107793cfcf4c5c7c77e62e09b))
+
 ## [0.4.4](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.4.3...chrono_machines/v0.4.4) (2026-06-16)
 
 

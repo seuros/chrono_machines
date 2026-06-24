@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.3.2...chrono-machines-v0.4.0) (2026-06-24)
+
+
+### Features
+
+* **native:** make core crate no_std capable ([#15](https://github.com/seuros/chrono_machines/issues/15)) ([76129a3](https://github.com/seuros/chrono_machines/commit/76129a31ad75142641e4a29a82424ad26fb9ecd6))
+
 ## [0.3.2](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.3.1...chrono-machines-v0.3.2) (2026-06-15)
 
 
