@@ -10,7 +10,7 @@ jobs:
   test-rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Run Rust core tests
         run: |
@@ -21,6 +21,24 @@ jobs:
           cd ext/chrono_machines_native/core
           cargo test --doc
 
+  test-no-std:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+          components: clippy
+      - name: Build pure no_std (bare metal)
+        run: cargo build --no-default-features --target thumbv7em-none-eabihf
+        working-directory: ext/chrono_machines_native/core
+      - name: Build no_std + alloc (bare metal)
+        run: cargo build --no-default-features --features alloc --target thumbv7em-none-eabihf
+        working-directory: ext/chrono_machines_native/core
+      - name: Clippy (no_std + alloc)
+        run: cargo clippy --no-default-features --features alloc --target thumbv7em-none-eabihf -- -D warnings
+        working-directory: ext/chrono_machines_native/core
+
   test-mri:
     needs: test-rust
     runs-on: ubuntu-latest
@@ -28,7 +46,7 @@ jobs:
       matrix:
         ruby-version: ['3.4', '4.0']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Set up Ruby ${{ matrix.ruby-version }}
@@ -46,7 +64,7 @@ jobs:
       matrix:
         ruby-version: ['jruby-10.0.2.0', 'truffleruby']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:

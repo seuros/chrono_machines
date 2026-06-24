@@ -39,6 +39,7 @@ pub mod backoff;
 pub mod dsl;
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub mod policy;
+#[cfg(any(feature = "std", feature = "alloc"))]
 pub mod retry;
 pub mod sleep;
 
@@ -55,6 +56,7 @@ pub use policy::{
     clear_global_policies, get_global_policy, list_global_policies, register_global_policy,
     remove_global_policy,
 };
+#[cfg(any(feature = "std", feature = "alloc"))]
 pub use retry::{RetryBuilder, RetryContext, RetryError, RetryOutcome, Retryable, RetryableExt};
 #[cfg(feature = "std")]
 pub use sleep::StdSleeper;
@@ -169,7 +171,8 @@ impl Policy {
 
         // Calculate base exponential backoff
         let exponent = attempt.saturating_sub(1) as i32;
-        let base_exponential = (self.base_delay_ms as f64) * self.multiplier.powi(exponent);
+        let base_exponential =
+            (self.base_delay_ms as f64) * crate::backoff::powi_f64(self.multiplier, exponent);
 
         // Cap at max_delay
         let capped = base_exponential.min(self.max_delay_ms as f64);

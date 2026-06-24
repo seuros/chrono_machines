@@ -6,6 +6,7 @@ authors = ["Abdelkader Boudih <terminale@gmail.com>"]
 license = "MIT"
 description = "Ruby FFI binding for chrono_machines"
 repository = "https://github.com/seuros/chrono_machines"
+publish = false
 
 [lib]
 name = "chrono_machines_native"

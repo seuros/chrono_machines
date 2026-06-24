@@ -16,12 +16,12 @@ crate-type = ["lib"]
 
 [features]
 default = ["std"]
-std = ["alloc", "rand/std", "rand/std_rng"]
+std = ["alloc", "rand/std", "rand/thread_rng"]
 alloc = []
 async = ["std", "dep:async-trait"]
 
 [dependencies]
-rand = { version = "0.10", default-features = false, features = ["std_rng", "sys_rng"] }
+rand = { version = "0.10", default-features = false, features = ["std_rng"] }
 async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
