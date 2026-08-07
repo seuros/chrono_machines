@@ -266,4 +266,11 @@ class ChronoMachinesDSLTest < Minitest::Test
     assert_equal 'Inline DSL Success!', result
     assert_equal 2, call_count
   end
+
+  def test_eager_loading_does_not_raise
+    # Rails apps eager-load in production via Zeitwerk::Loader.eager_load_all.
+    # Files that don't define the constant Zeitwerk infers (native_speedup.rb
+    # defines NativeExecutor, not NativeSpeedup) must be in the ignore list.
+    Zeitwerk::Loader.eager_load_all
+  end
 end
