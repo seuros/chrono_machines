@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.5.2](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.5.1...chrono_machines/v0.5.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* ignore native_speedup.rb in Zeitwerk loader ([#19](https://github.com/seuros/chrono_machines/issues/19)) ([491cc2d](https://github.com/seuros/chrono_machines/commit/491cc2d3f88786cf6d0c6af68dba7d2511fa3f36))
+
 ## [0.5.1](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.5.0...chrono_machines/v0.5.1) (2026-08-07)
 
 
