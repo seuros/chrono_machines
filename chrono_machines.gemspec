@@ -35,11 +35,13 @@ Gem::Specification.new do |spec|
                           lib/**/*.rb
                           sig/**/*.rbs
                           ext/**/*.{rb,rs,toml}
+                          Cargo.toml
+                          Cargo.lock
                           README.md
                           CHANGELOG.md
                           LICENSE.txt
                         ]).select { |f| File.exist?(f) }
-                   .reject { |f| f =~ /\.(bundle|so|dll)\z/ }
+                   .reject { |f| f =~ /\.(bundle|so|dll)\z/ || f.start_with?('ext/chrono_machines_native/target/') }
   spec.require_paths = ['lib']
 
   # Add native extension (only on CRuby/TruffleRuby)
