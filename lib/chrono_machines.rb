@@ -6,6 +6,7 @@ loader = Zeitwerk::Loader.for_gem
 loader.ignore("#{__dir__}/chrono_machines/errors.rb")
 loader.ignore("#{__dir__}/chrono_machines/async_support.rb")
 loader.ignore("#{__dir__}/chrono_machines/test_helper.rb")
+loader.ignore("#{__dir__}/chrono_machines/native_speedup.rb")
 loader.inflector.inflect('dsl' => 'DSL')
 loader.setup
 
