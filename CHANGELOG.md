@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.5.1](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.5.0...chrono_machines/v0.5.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* package workspace Cargo manifest so source builds work ([#17](https://github.com/seuros/chrono_machines/issues/17)) ([ac0ddad](https://github.com/seuros/chrono_machines/commit/ac0ddad15d26528771825240a05ed8c84fb61520))
+
 ## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.4.4...chrono_machines/v0.5.0) (2026-06-24)
 
 
