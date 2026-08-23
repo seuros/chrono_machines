@@ -43,6 +43,30 @@ pub mod policy;
 pub mod retry;
 pub mod sleep;
 
+/// The `rand` crate this one was built against.
+///
+/// [`BackoffStrategy::delay`] is generic over [`rand::Rng`], which puts that
+/// trait in the public API: a downstream strategy cannot be written without
+/// naming it. Re-exporting it here means implementors do not have to add their
+/// own `rand` dependency and keep its version in lockstep with this crate's by
+/// hand — a mismatch there produces two incompatible `Rng` traits and an error
+/// that says nothing about the real cause.
+///
+/// ```rust
+/// use chrono_machines::{rand::Rng, BackoffStrategy};
+///
+/// struct Immediate;
+///
+/// impl BackoffStrategy for Immediate {
+///     fn delay<R: Rng>(&self, attempt: u8, _rng: &mut R) -> Option<u64> {
+///         self.should_retry(attempt).then_some(0)
+///     }
+///     fn should_retry(&self, attempt: u8) -> bool { attempt < self.max_attempts() }
+///     fn max_attempts(&self) -> u8 { 3 }
+/// }
+/// ```
+pub use ::rand;
+
 pub use backoff::{
     fibonacci, BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff,
     FibonacciBackoff,

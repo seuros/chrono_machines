@@ -6,7 +6,8 @@
     },
     "ext/chrono_machines_native/core": {
       "release-type": "rust",
-      "package-name": "chrono-machines"
+      "package-name": "chrono-machines",
+      "extra-files": ["README.md"]
     },
     "ext/chrono_machines_native/ffi": {
       "release-type": "rust",

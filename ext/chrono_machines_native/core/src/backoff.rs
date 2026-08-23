@@ -55,6 +55,39 @@ fn apply_jitter<R: Rng>(base: f64, jitter_factor: f64, rng: &mut R) -> u64 {
 }
 
 /// Trait for backoff strategies that calculate delays between retry attempts
+///
+/// The three strategies in this module cover the usual shapes. Implement it
+/// yourself when the delay depends on something they cannot see — a server's
+/// `Retry-After`, a token bucket, a circuit breaker's cool-down.
+///
+/// [`delay`](BackoffStrategy::delay) is generic over [`Rng`], so an
+/// implementation has to name that trait. Take it from
+/// [`chrono_machines::rand`](crate::rand) rather than adding your own `rand`
+/// dependency; a version skew between the two yields two distinct `Rng` traits
+/// and a mismatch error that points nowhere near the cause.
+///
+/// ```rust
+/// use chrono_machines::{rand::Rng, BackoffStrategy};
+///
+/// /// Retries as fast as the loop will go — for tests, where sleeping is waste.
+/// struct Immediate {
+///     max_attempts: u8,
+/// }
+///
+/// impl BackoffStrategy for Immediate {
+///     fn delay<R: Rng>(&self, attempt: u8, _rng: &mut R) -> Option<u64> {
+///         self.should_retry(attempt).then_some(0)
+///     }
+///
+///     fn should_retry(&self, attempt: u8) -> bool {
+///         attempt < self.max_attempts
+///     }
+///
+///     fn max_attempts(&self) -> u8 {
+///         self.max_attempts
+///     }
+/// }
+/// ```
 pub trait BackoffStrategy {
     /// Calculate the delay in milliseconds for the given attempt number
     ///

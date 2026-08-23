@@ -20,7 +20,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chrono-machines = "0.4"
+chrono-machines = "0.5" # x-release-please-version
 ```
 
 ### Basic Example
@@ -142,7 +142,7 @@ Disable default features for `no_std` environments:
 
 ```toml
 [dependencies]
-chrono-machines = { version = "0.4", default-features = false }
+chrono-machines = { version = "0.5", default-features = false } # x-release-please-version
 ```
 
 Pure `no_std` (no allocator) gives you the delay math (`Policy`,
@@ -157,7 +157,7 @@ vector-backed `PolicyRegistry`, all without `std`:
 
 ```toml
 [dependencies]
-chrono-machines = { version = "0.4", default-features = false, features = ["alloc"] }
+chrono-machines = { version = "0.5", default-features = false, features = ["alloc"] } # x-release-please-version
 ```
 
 Drive a retry loop with a caller-supplied sleeper and RNG:
@@ -180,7 +180,7 @@ let outcome = operation
 
 ```toml
 [dependencies]
-chrono-machines = { version = "0.4", features = ["async"] }
+chrono-machines = { version = "0.5", features = ["async"] } # x-release-please-version
 ```
 
 ```rust,ignore
