@@ -58,6 +58,10 @@ pub use policy::{
 };
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub use retry::{RetryBuilder, RetryContext, RetryError, RetryOutcome, Retryable, RetryableExt};
+#[cfg(feature = "async")]
+pub use retry::AsyncRetryable;
+#[cfg(feature = "async")]
+pub use sleep::AsyncSleeper;
 #[cfg(feature = "std")]
 pub use sleep::StdSleeper;
 pub use sleep::{FnSleeper, Sleeper};

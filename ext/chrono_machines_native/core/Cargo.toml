@@ -18,11 +18,13 @@ crate-type = ["lib"]
 default = ["std"]
 std = ["alloc", "rand/std", "rand/thread_rng"]
 alloc = []
-async = ["std", "dep:async-trait"]
+# Async retry driver. Needs `alloc` for the builder's boxed callbacks, but not
+# `std`: the futures are native `async fn` in trait, so there is no runtime
+# dependency and nothing to box per sleep.
+async = ["alloc"]
 
 [dependencies]
 rand = { version = "0.10", default-features = false, features = ["std_rng"] }
-async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }

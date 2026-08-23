@@ -20,7 +20,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chrono_machines = "0.2"
+chrono-machines = "0.4"
 ```
 
 ### Basic Example
@@ -142,7 +142,7 @@ Disable default features for `no_std` environments:
 
 ```toml
 [dependencies]
-chrono_machines = { version = "0.2", default-features = false }
+chrono-machines = { version = "0.4", default-features = false }
 ```
 
 Pure `no_std` (no allocator) gives you the delay math (`Policy`,
@@ -157,7 +157,7 @@ vector-backed `PolicyRegistry`, all without `std`:
 
 ```toml
 [dependencies]
-chrono_machines = { version = "0.2", default-features = false, features = ["alloc"] }
+chrono-machines = { version = "0.4", default-features = false, features = ["alloc"] }
 ```
 
 Drive a retry loop with a caller-supplied sleeper and RNG:
@@ -172,6 +172,51 @@ let rng = StdRng::seed_from_u64(0xC0FFEE);
 let outcome = operation
     .retry(ExponentialBackoff::default().max_attempts(5))
     .call_with_sleeper_and_rng(sleeper, rng);
+```
+
+### Async runtimes
+
+`Sleeper` blocks. On a runtime, enable `async` and use `.retry_async()`:
+
+```toml
+[dependencies]
+chrono-machines = { version = "0.4", features = ["async"] }
+```
+
+```rust,ignore
+use chrono_machines::{AsyncRetryable, ExponentialBackoff};
+use std::time::Duration;
+
+let outcome = (|| async { fetch(&url).await })
+    .retry_async(ExponentialBackoff::default())
+    .when(|e: &Error| e.is_transient())
+    .call_async(|ms| tokio::time::sleep(Duration::from_millis(ms)))
+    .await?;
+```
+
+The sleeper is any `Fn(u64) -> Future<Output = ()>` — tokio, async-std, embassy.
+Builder methods are shared with the sync driver. `async` implies `alloc`, not
+`std`; `call_async_with_rng` is the `no_std` entry point.
+
+The closure must return a fresh future per attempt. Dropping the returned
+future cancels the retry.
+
+When the server dictates the delay (`Retry-After`, 429), skip the driver and
+own the loop:
+
+```rust,ignore
+let mut attempt = 1;
+loop {
+    match send().await {
+        Ok(resp) => break Ok(resp),
+        Err(e) if attempt < policy.max_attempts && e.is_retryable() => {
+            let wait = policy.calculate_delay(attempt, 1.0);
+            tokio::time::sleep(Duration::from_millis(wait)).await;
+            attempt += 1;
+        }
+        Err(e) => break Err(e),
+    }
+}
 ```
 
 ## Backoff Strategies
