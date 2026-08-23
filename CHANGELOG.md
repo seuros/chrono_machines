@@ -1,5 +1,24 @@
 ## [Unreleased]
 
+## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.5.0...chrono_machines/v0.5.0) (2026-08-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **native:** add async retry driver ([#21](https://github.com/seuros/chrono_machines/issues/21))
+
+### Features
+
+* **core:** re-export rand so BackoffStrategy is implementable downstream ([dc1cf49](https://github.com/seuros/chrono_machines/commit/dc1cf494df0124032bec6aee6e4f6a33e43abbfb))
+* fix release ([ad40d8f](https://github.com/seuros/chrono_machines/commit/ad40d8f5b6629e49ba2d5f0cb7f213a1cc1e30c7))
+* **native:** add async retry driver ([#21](https://github.com/seuros/chrono_machines/issues/21)) ([766f207](https://github.com/seuros/chrono_machines/commit/766f20799bcc0c36f7ca6a904fadff227549fee7))
+
+
+### Bug Fixes
+
+* ignore native_speedup.rb in Zeitwerk loader ([#19](https://github.com/seuros/chrono_machines/issues/19)) ([491cc2d](https://github.com/seuros/chrono_machines/commit/491cc2d3f88786cf6d0c6af68dba7d2511fa3f36))
+* package workspace Cargo manifest so source builds work ([#17](https://github.com/seuros/chrono_machines/issues/17)) ([ac0ddad](https://github.com/seuros/chrono_machines/commit/ac0ddad15d26528771825240a05ed8c84fb61520))
+
 ## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.5.2...chrono_machines/v0.5.0) (2026-08-23)
 
 

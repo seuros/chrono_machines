@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.5.0...chrono-machines-v0.6.0) (2026-08-23)
+
+
+### Features
+
+* **core:** re-export rand so BackoffStrategy is implementable downstream ([dc1cf49](https://github.com/seuros/chrono_machines/commit/dc1cf494df0124032bec6aee6e4f6a33e43abbfb))
+
 ## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.4.0...chrono-machines-v0.5.0) (2026-08-23)
 
 
