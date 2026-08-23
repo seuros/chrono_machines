@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.4.0...chrono-machines-v0.5.0) (2026-08-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **native:** add async retry driver ([#21](https://github.com/seuros/chrono_machines/issues/21))
+
+### Features
+
+* fix release ([ad40d8f](https://github.com/seuros/chrono_machines/commit/ad40d8f5b6629e49ba2d5f0cb7f213a1cc1e30c7))
+* **native:** add async retry driver ([#21](https://github.com/seuros/chrono_machines/issues/21)) ([766f207](https://github.com/seuros/chrono_machines/commit/766f20799bcc0c36f7ca6a904fadff227549fee7))
+
 ## [0.4.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.3.2...chrono-machines-v0.4.0) (2026-06-24)
 
 
