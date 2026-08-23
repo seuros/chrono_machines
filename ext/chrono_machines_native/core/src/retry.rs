@@ -16,10 +16,14 @@ use alloc::boxed::Box;
 type DefaultRetryBuilder<F, B, T, E> = RetryBuilder<F, B, T, E, fn(&E) -> bool>;
 
 /// Type alias for boxed notify callback
-type NotifyCallback<E> = Box<dyn FnMut(&RetryContext<E>)>;
+///
+/// `Send` so that a configured builder — and therefore the future returned by
+/// [`RetryBuilder::call_async`] — can cross threads. Without it `tokio::spawn`
+/// rejects every retry that has a callback attached.
+type NotifyCallback<E> = Box<dyn FnMut(&RetryContext<E>) + Send>;
 
 /// Type alias for boxed failure callback
-type FailureCallback<E> = Box<dyn FnMut(&RetryError<E>)>;
+type FailureCallback<E> = Box<dyn FnMut(&RetryError<E>) + Send>;
 
 /// Build a terminal [`RetryError`], firing the `on_failure` callback if present.
 fn finalize_failure<E>(
@@ -394,9 +398,26 @@ pub struct RetryBuilder<F, B, T, E, W> {
     _phantom_e: core::marker::PhantomData<E>,
 }
 
+/// What the retry loop should do after one attempt.
+///
+/// Produced by [`RetryBuilder::step`], which holds every retry decision —
+/// predicate, exhaustion, delay, callbacks — so the sync and async drivers
+/// share one implementation and can never drift apart. The drivers differ
+/// only in how they await the operation and the sleep.
+enum Step<T, E> {
+    /// The attempt succeeded; return this outcome.
+    Done(RetryOutcome<T>),
+    /// Sleep this many milliseconds, then attempt again.
+    Sleep(u64),
+    /// Give up and return this error.
+    Fail(RetryError<E>),
+}
+
+// Configuration methods, plus the shared decision logic. Deliberately not bound
+// on `F`: the sync driver wants `FnMut() -> Result<T, E>` and the async one
+// wants `FnMut() -> impl Future`, and neither bound belongs on `.when()`.
 impl<F, B, T, E, W> RetryBuilder<F, B, T, E, W>
 where
-    F: FnMut() -> Result<T, E>,
     B: BackoffStrategy,
     W: Fn(&E) -> bool,
 {
@@ -475,7 +496,7 @@ where
     /// ```
     pub fn notify<C>(mut self, callback: C) -> Self
     where
-        C: FnMut(&RetryContext<E>) + 'static,
+        C: FnMut(&RetryContext<E>) + Send + 'static,
     {
         self.notify = Some(Box::new(callback));
         self
@@ -486,7 +507,7 @@ where
     /// The callback receives a [`RetryContext`] with no error (error field is None).
     pub fn on_success<C>(mut self, callback: C) -> Self
     where
-        C: FnMut(&RetryContext<E>) + 'static,
+        C: FnMut(&RetryContext<E>) + Send + 'static,
     {
         self.on_success = Some(Box::new(callback));
         self
@@ -497,12 +518,93 @@ where
     /// The callback receives the rich [`RetryError`] describing the failure.
     pub fn on_failure<C>(mut self, callback: C) -> Self
     where
-        C: FnMut(&RetryError<E>) + 'static,
+        C: FnMut(&RetryError<E>) + Send + 'static,
     {
         self.on_failure = Some(Box::new(callback));
         self
     }
 
+    /// Decide what happens after one attempt, firing any callbacks it implies.
+    ///
+    /// This is the whole retry policy. A driver's only jobs are producing the
+    /// `Result` and honouring [`Step::Sleep`].
+    fn step<R: rand::Rng>(
+        &mut self,
+        result: Result<T, E>,
+        attempt: u8,
+        cumulative_delay_ms: u64,
+        rng: &mut R,
+    ) -> Step<T, E> {
+        let max_attempts = self.backoff.max_attempts();
+
+        let error = match result {
+            Ok(value) => {
+                if let Some(ref mut callback) = self.on_success {
+                    let ctx = RetryContext {
+                        attempt,
+                        next_delay_ms: None,
+                        cumulative_delay_ms,
+                        error: None,
+                    };
+                    callback(&ctx);
+                }
+                return Step::Done(RetryOutcome::new(value, attempt, cumulative_delay_ms));
+            }
+            Err(error) => error,
+        };
+
+        // An error the caller told us not to retry fails immediately, and is
+        // reported as rejected rather than exhausted.
+        if let Some(ref predicate) = self.when
+            && !predicate(&error)
+        {
+            return Step::Fail(finalize_failure(
+                self.on_failure.as_mut(),
+                RetryErrorKind::PredicateRejected,
+                attempt,
+                max_attempts,
+                cumulative_delay_ms,
+                error,
+            ));
+        }
+
+        // Out of attempts, or the strategy declined to produce a delay.
+        let Some(delay_ms) = self
+            .backoff
+            .should_retry(attempt)
+            .then(|| self.backoff.delay(attempt, rng))
+            .flatten()
+        else {
+            return Step::Fail(finalize_failure(
+                self.on_failure.as_mut(),
+                RetryErrorKind::Exhausted,
+                attempt,
+                max_attempts,
+                cumulative_delay_ms,
+                error,
+            ));
+        };
+
+        if let Some(ref mut notify) = self.notify {
+            let ctx = RetryContext {
+                attempt,
+                next_delay_ms: Some(delay_ms),
+                cumulative_delay_ms,
+                error: Some(&error),
+            };
+            notify(&ctx);
+        }
+
+        Step::Sleep(delay_ms)
+    }
+}
+
+impl<F, B, T, E, W> RetryBuilder<F, B, T, E, W>
+where
+    F: FnMut() -> Result<T, E>,
+    B: BackoffStrategy,
+    W: Fn(&E) -> bool,
+{
     /// Execute the retry operation with blocking sleep (requires `std` feature)
     ///
     /// Runs the operation synchronously, retrying with blocking sleep between attempts.
@@ -537,7 +639,9 @@ where
     /// Execute the retry operation with a custom sleeper
     ///
     /// This low-level method allows providing a custom sleep implementation,
-    /// enabling support for async runtimes, embedded systems, or testing.
+    /// enabling support for embedded systems or testing. The sleeper blocks,
+    /// so async runtimes should drive their own loop off
+    /// [`Policy::calculate_delay`](crate::Policy::calculate_delay) instead.
     ///
     /// # Arguments
     ///
@@ -591,82 +695,138 @@ where
         mut rng: R,
     ) -> Result<RetryOutcome<T>, RetryError<E>> {
         let mut attempt = 1u8;
-        let max_attempts = self.backoff.max_attempts();
         let mut cumulative_delay_ms: u64 = 0;
 
         loop {
-            match (self.operation)() {
-                Ok(_value) => {
-                    // Invoke on_success callback with context
-                    if let Some(ref mut callback) = self.on_success {
-                        let ctx = RetryContext {
-                            attempt,
-                            next_delay_ms: None,
-                            cumulative_delay_ms,
-                            error: None,
-                        };
-                        callback(&ctx);
-                    }
-                    return Ok(RetryOutcome::new(_value, attempt, cumulative_delay_ms));
+            let result = (self.operation)();
+            match self.step(result, attempt, cumulative_delay_ms, &mut rng) {
+                Step::Done(outcome) => return Ok(outcome),
+                Step::Fail(error) => return Err(error),
+                Step::Sleep(delay_ms) => {
+                    sleeper.sleep_ms(delay_ms);
+                    cumulative_delay_ms = cumulative_delay_ms.saturating_add(delay_ms);
+                    attempt = attempt.saturating_add(1);
                 }
-                Err(error) => {
-                    // Check if this error should be retried
-                    if let Some(ref predicate) = self.when
-                        && !predicate(&error) {
-                            // Error doesn't match predicate, fail immediately
-                            return Err(finalize_failure(
-                                self.on_failure.as_mut(),
-                                RetryErrorKind::PredicateRejected,
-                                attempt,
-                                max_attempts,
-                                cumulative_delay_ms,
-                                error,
-                            ));
-                        }
+            }
+        }
+    }
+}
 
-                    // Check if we have retries remaining
-                    if !self.backoff.should_retry(attempt) {
-                        return Err(finalize_failure(
-                            self.on_failure.as_mut(),
-                            RetryErrorKind::Exhausted,
-                            attempt,
-                            max_attempts,
-                            cumulative_delay_ms,
-                            error,
-                        ));
-                    }
+/// Begin a retry for an operation that returns a future.
+///
+/// The async counterpart to [`Retryable`], and the entry point for
+/// [`RetryBuilder::call_async`]. It is a separate trait because the operation's
+/// bound differs (`FnMut() -> impl Future` rather than `FnMut() -> Result`);
+/// everything after construction — `when`, `notify`, `on_success`,
+/// `on_failure` — is the same builder.
+///
+/// The closure is called once per attempt and must return a *fresh* future each
+/// time, which rules out passing a single future: futures are not restartable.
+///
+/// ```rust,ignore
+/// let outcome = (|| async { fetch().await })
+///     .retry_async(ExponentialBackoff::default())
+///     .when(|e| e.is_transient())
+///     .call_async(|ms| tokio::time::sleep(Duration::from_millis(ms)))
+///     .await?;
+/// ```
+#[cfg(feature = "async")]
+pub trait AsyncRetryable<T, E> {
+    /// Begin building a retry operation with the given backoff strategy
+    fn retry_async<B: BackoffStrategy>(self, backoff: B) -> DefaultRetryBuilder<Self, B, T, E>
+    where
+        Self: Sized;
+}
 
-                    // Calculate delay
-                    match self.backoff.delay(attempt, &mut rng) {
-                        Some(delay_ms) => {
-                            // Notify if callback is set
-                            if let Some(ref mut notify) = self.notify {
-                                let ctx = RetryContext {
-                                    attempt,
-                                    next_delay_ms: Some(delay_ms),
-                                    cumulative_delay_ms,
-                                    error: Some(&error),
-                                };
-                                notify(&ctx);
-                            }
+#[cfg(feature = "async")]
+impl<F, Fut, T, E> AsyncRetryable<T, E> for F
+where
+    F: FnMut() -> Fut,
+    Fut: core::future::Future<Output = Result<T, E>>,
+{
+    fn retry_async<B: BackoffStrategy>(
+        self,
+        backoff: B,
+    ) -> RetryBuilder<Self, B, T, E, fn(&E) -> bool> {
+        RetryBuilder {
+            operation: self,
+            backoff,
+            when: None,
+            notify: None,
+            on_success: None,
+            on_failure: None,
+            _phantom_t: core::marker::PhantomData,
+            _phantom_e: core::marker::PhantomData,
+        }
+    }
+}
 
-                            // Sleep before retry
-                            sleeper.sleep_ms(delay_ms);
-                            cumulative_delay_ms = cumulative_delay_ms.saturating_add(delay_ms);
-                            attempt = attempt.saturating_add(1);
-                        }
-                        None => {
-                            // Backoff says no more retries
-                            return Err(finalize_failure(
-                                self.on_failure.as_mut(),
-                                RetryErrorKind::Exhausted,
-                                attempt,
-                                max_attempts,
-                                cumulative_delay_ms,
-                                error,
-                            ));
-                        }
-                    }
+#[cfg(feature = "async")]
+impl<F, Fut, B, T, E, W> RetryBuilder<F, B, T, E, W>
+where
+    F: FnMut() -> Fut,
+    Fut: core::future::Future<Output = Result<T, E>>,
+    B: BackoffStrategy,
+    W: Fn(&E) -> bool,
+{
+    /// Execute the retry operation on an async runtime (requires `std`).
+    ///
+    /// Identical policy to [`call`](Self::call) — same predicate, callbacks and
+    /// backoff — but the operation is awaited and the delay yields to the
+    /// executor instead of blocking the thread.
+    ///
+    /// The `sleeper` supplies the runtime's timer. Any
+    /// `Fn(u64) -> Future<Output = ()>` works, so this crate stays free of a
+    /// runtime dependency:
+    ///
+    /// ```rust,ignore
+    /// use chrono_machines::{AsyncRetryable, ExponentialBackoff};
+    /// use std::time::Duration;
+    ///
+    /// let outcome = (|| async { reqwest::get(url).await })
+    ///     .retry_async(ExponentialBackoff::default())
+    ///     .call_async(|ms| tokio::time::sleep(Duration::from_millis(ms)))
+    ///     .await?;
+    /// ```
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the returned future cancels the retry wherever it stands, in
+    /// the operation or mid-sleep. The in-flight attempt is dropped with it, so
+    /// the operation must be cancel-safe if that matters to the caller;
+    /// `on_failure` does not fire, because nothing failed.
+    #[cfg(feature = "std")]
+    pub async fn call_async<S: crate::sleep::AsyncSleeper>(
+        self,
+        sleeper: S,
+    ) -> Result<RetryOutcome<T>, RetryError<E>> {
+        let rng: StdRng = rand::make_rng();
+        self.call_async_with_rng(sleeper, rng).await
+    }
+
+    /// Execute the retry operation on an async runtime with a caller-supplied RNG.
+    ///
+    /// The `no_std` entry point, mirroring
+    /// [`call_with_sleeper_and_rng`](Self::call_with_sleeper_and_rng): callers
+    /// provide their own [`rand::Rng`] for jitter instead of relying on the
+    /// `std`-only `make_rng`.
+    pub async fn call_async_with_rng<S: crate::sleep::AsyncSleeper, R: rand::Rng>(
+        mut self,
+        sleeper: S,
+        mut rng: R,
+    ) -> Result<RetryOutcome<T>, RetryError<E>> {
+        let mut attempt = 1u8;
+        let mut cumulative_delay_ms: u64 = 0;
+
+        loop {
+            let result = (self.operation)().await;
+            match self.step(result, attempt, cumulative_delay_ms, &mut rng) {
+                Step::Done(outcome) => return Ok(outcome),
+                Step::Fail(error) => return Err(error),
+                Step::Sleep(delay_ms) => {
+                    sleeper.sleep_ms(delay_ms).await;
+                    cumulative_delay_ms = cumulative_delay_ms.saturating_add(delay_ms);
+                    attempt = attempt.saturating_add(1);
                 }
             }
         }
@@ -772,16 +932,16 @@ mod tests {
 
     #[test]
     fn test_retry_notify_callback() {
-        use core::cell::{Cell, RefCell};
+        use core::cell::Cell;
         #[cfg(feature = "std")]
-        use std::rc::Rc;
+        use std::sync::{Arc, Mutex};
 
         #[cfg(not(feature = "std"))]
         use alloc::rc::Rc;
 
         let attempts = Cell::new(0);
-        let notify_calls = Rc::new(RefCell::new(Vec::new()));
-        let notify_calls_clone = Rc::clone(&notify_calls);
+        let notify_calls = Arc::new(Mutex::new(Vec::new()));
+        let notify_calls_clone = Arc::clone(&notify_calls);
 
         let operation = || {
             let current = attempts.get();
@@ -798,7 +958,7 @@ mod tests {
             .retry(ExponentialBackoff::default().max_attempts(3))
             .notify(move |ctx| {
                 // Track notify calls
-                notify_calls_clone.borrow_mut().push((
+                notify_calls_clone.lock().unwrap().push((
                     ctx.attempt,
                     ctx.next_delay_ms,
                     ctx.cumulative_delay_ms,
@@ -814,7 +974,7 @@ mod tests {
         assert_eq!(outcome.attempts(), 3);
 
         // Verify notify was called twice (for the two failures)
-        let calls = notify_calls.borrow();
+        let calls = notify_calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].0, 1); // First attempt
         assert_eq!(calls[1].0, 2); // Second attempt
@@ -958,16 +1118,16 @@ mod tests {
 
     #[test]
     fn test_retry_context_comprehensive() {
-        use core::cell::{Cell, RefCell};
+        use core::cell::Cell;
         #[cfg(feature = "std")]
-        use std::rc::Rc;
+        use std::sync::{Arc, Mutex};
 
         #[cfg(not(feature = "std"))]
         use alloc::rc::Rc;
 
         let attempts = Cell::new(0);
-        let notify_contexts = Rc::new(RefCell::new(Vec::new()));
-        let notify_contexts_clone = Rc::clone(&notify_contexts);
+        let notify_contexts = Arc::new(Mutex::new(Vec::new()));
+        let notify_contexts_clone = Arc::clone(&notify_contexts);
 
         let operation = || {
             let current = attempts.get();
@@ -984,7 +1144,7 @@ mod tests {
             .retry(ConstantBackoff::new().delay_ms(100).max_attempts(5).jitter_factor(0.0))
             .notify(move |ctx| {
                 // Capture context for verification
-                notify_contexts_clone.borrow_mut().push((
+                notify_contexts_clone.lock().unwrap().push((
                     ctx.attempt,
                     ctx.next_delay_ms,
                     ctx.cumulative_delay_ms,
@@ -1002,7 +1162,7 @@ mod tests {
         assert_eq!(outcome.attempts(), 4);
 
         // Verify notify contexts
-        let contexts = notify_contexts.borrow();
+        let contexts = notify_contexts.lock().unwrap();
         assert_eq!(contexts.len(), 3); // Three failures before success
 
         // First failure
@@ -1023,16 +1183,16 @@ mod tests {
 
     #[test]
     fn test_retry_context_on_success() {
-        use core::cell::{Cell, RefCell};
+        use core::cell::Cell;
         #[cfg(feature = "std")]
-        use std::rc::Rc;
+        use std::sync::{Arc, Mutex};
 
         #[cfg(not(feature = "std"))]
         use alloc::rc::Rc;
 
         let attempts = Cell::new(0);
-        let success_context = Rc::new(RefCell::new(None));
-        let success_context_clone = Rc::clone(&success_context);
+        let success_context = Arc::new(Mutex::new(None));
+        let success_context_clone = Arc::clone(&success_context);
 
         let operation = || {
             let current = attempts.get();
@@ -1048,7 +1208,7 @@ mod tests {
         let result = operation
             .retry(ConstantBackoff::new().delay_ms(50).max_attempts(5).jitter_factor(0.0))
             .on_success(move |ctx| {
-                success_context_clone.borrow_mut().replace((
+                success_context_clone.lock().unwrap().replace((
                     ctx.attempt,
                     ctx.next_delay_ms,
                     ctx.cumulative_delay_ms,
@@ -1062,7 +1222,7 @@ mod tests {
         assert_eq!(outcome.cumulative_delay_ms(), 100); // 2 delays of 50ms
 
         // Verify success context
-        let ctx = success_context.borrow();
+        let ctx = success_context.lock().unwrap();
         assert!(ctx.is_some());
         let (attempt, next_delay, cumulative, no_error) = ctx.unwrap();
         assert_eq!(attempt, 3);
@@ -1073,16 +1233,16 @@ mod tests {
 
     #[test]
     fn test_retry_context_cumulative_accuracy() {
-        use core::cell::{Cell, RefCell};
+        use core::cell::Cell;
         #[cfg(feature = "std")]
-        use std::rc::Rc;
+        use std::sync::{Arc, Mutex};
 
         #[cfg(not(feature = "std"))]
         use alloc::rc::Rc;
 
         let attempts = Cell::new(0);
-        let cumulative_progression = Rc::new(RefCell::new(Vec::new()));
-        let cumulative_progression_clone = Rc::clone(&cumulative_progression);
+        let cumulative_progression = Arc::new(Mutex::new(Vec::new()));
+        let cumulative_progression_clone = Arc::clone(&cumulative_progression);
 
         let operation = || {
             let current = attempts.get();
@@ -1093,12 +1253,12 @@ mod tests {
         let _result = operation
             .retry(ConstantBackoff::new().delay_ms(25).max_attempts(4).jitter_factor(0.0))
             .notify(move |ctx| {
-                cumulative_progression_clone.borrow_mut().push(ctx.cumulative_delay_ms);
+                cumulative_progression_clone.lock().unwrap().push(ctx.cumulative_delay_ms);
             })
             .call_with_sleeper(FnSleeper(|_| {}));
 
         // Verify cumulative delay progression
-        let progression = cumulative_progression.borrow();
+        let progression = cumulative_progression.lock().unwrap();
         assert_eq!(progression.len(), 3); // 3 retries before exhaustion
         assert_eq!(progression[0], 0);    // Before first sleep
         assert_eq!(progression[1], 25);   // After first sleep
@@ -1222,16 +1382,16 @@ mod tests {
     #[test]
     fn test_with_constant_uses_correct_delay() {
         use super::RetryableExt;
-        use core::cell::{Cell, RefCell};
+        use core::cell::Cell;
         #[cfg(feature = "std")]
-        use std::rc::Rc;
+        use std::sync::{Arc, Mutex};
 
         #[cfg(not(feature = "std"))]
         use alloc::rc::Rc;
 
         let attempts = Cell::new(0);
-        let delays = Rc::new(RefCell::new(Vec::new()));
-        let delays_clone = Rc::clone(&delays);
+        let delays = Arc::new(Mutex::new(Vec::new()));
+        let delays_clone = Arc::clone(&delays);
 
         let operation = || {
             let current = attempts.get();
@@ -1248,7 +1408,7 @@ mod tests {
             .with_constant(500)
             .notify(move |ctx| {
                 if let Some(delay) = ctx.next_delay_ms {
-                    delays_clone.borrow_mut().push(delay);
+                    delays_clone.lock().unwrap().push(delay);
                 }
             })
             .call_with_sleeper(FnSleeper(|_| {}));
@@ -1257,7 +1417,7 @@ mod tests {
         assert_eq!(outcome.attempts(), 3);
 
         // Verify constant delay was used (ConstantBackoff default has no jitter)
-        let recorded_delays = delays.borrow();
+        let recorded_delays = delays.lock().unwrap();
         assert_eq!(recorded_delays.len(), 2); // Two retries
         assert_eq!(recorded_delays[0], 500);
         assert_eq!(recorded_delays[1], 500);
