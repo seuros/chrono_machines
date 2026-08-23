@@ -1005,7 +1005,12 @@ mod tests {
         SUCCESS_CUMULATIVE_DELAY.store(0, Ordering::SeqCst);
 
         let outcome = operation
-            .retry(ExponentialBackoff::default().max_attempts(3))
+            // Jitter off: see `test_on_failure_callback_invoked`.
+            .retry(
+                ExponentialBackoff::default()
+                    .max_attempts(3)
+                    .jitter_factor(0.0),
+            )
             .on_success(|ctx| {
                 SUCCESS_ATTEMPT.store(ctx.attempt as usize, Ordering::SeqCst);
                 SUCCESS_CUMULATIVE_DELAY.store(ctx.cumulative_delay_ms as usize, Ordering::SeqCst);
@@ -1036,7 +1041,13 @@ mod tests {
         FAILURE_CUMULATIVE_DELAY.store(0, Ordering::SeqCst);
 
         let result = always_fails
-            .retry(ExponentialBackoff::default().max_attempts(2))
+            // Jitter off: the assertion below is that a delay was *accumulated*,
+            // and full jitter can legitimately draw 100ms * 0.004 -> 0.
+            .retry(
+                ExponentialBackoff::default()
+                    .max_attempts(2)
+                    .jitter_factor(0.0),
+            )
             .on_failure(|err| {
                 let marker = match err.kind() {
                     RetryErrorKind::Exhausted => 1,
