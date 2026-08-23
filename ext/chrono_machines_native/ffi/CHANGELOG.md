@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.3.0...chrono_machines_native-v0.5.0) (2026-08-23)
+
+
+### Features
+
+* fix release ([ad40d8f](https://github.com/seuros/chrono_machines/commit/ad40d8f5b6629e49ba2d5f0cb7f213a1cc1e30c7))
+
 ## [0.3.0](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.2.3...chrono_machines_native-v0.3.0) (2026-06-24)
 
 
