@@ -10,6 +10,7 @@ Pure Rust exponential backoff and retry library with full jitter support.
 - **Zero Allocation**: Core delay calculations use stack-only data structures
 - **Retry Builder**: Fluent `.retry()` API returning rich `RetryOutcome`
 - **Instrumentation Hooks**: Separate `notify`, `on_success`, and `on_failure` callbacks
+- **Server-Hinted Delays**: `delay_from` honors `Retry-After`-style hints from errors
 - **Named Policies**: Optional registry (std/alloc) with global helpers
 - **ESP32 Ready**: Tested on embedded systems
 - **Fast**: Minimal overhead for retry operations
@@ -87,6 +88,29 @@ let outcome = operation
 println!("took {} attempts", outcome.attempts());
 println!("value = {}", outcome.into_inner());
 ```
+
+### Server-Hinted Delays (`delay_from`)
+
+When the server tells you when to come back - HTTP 429 with `Retry-After` - let the error dictate the next delay instead of guessing with backoff:
+
+```rust,ignore
+use chrono_machines::{DelayHint, ExponentialBackoff, Retryable};
+
+let outcome = fetch_api
+    .retry(ExponentialBackoff::default().max_attempts(5).max_delay_ms(30_000))
+    .delay_from(|e: &ApiError, _attempt| match e.retry_after_ms() {
+        Some(ms) => DelayHint::Ms(ms),
+        None => DelayHint::Backoff,
+    })
+    .call()?;
+```
+
+The hook's `DelayHint` controls the retry:
+
+- `Backoff` - no hint; fall back to the backoff strategy
+- `Ms(u64)` - sleep exactly that long (no jitter: the server picked the time, honor it)
+- `Ms` **beyond the strategy's max delay** - halt with `RetryErrorKind::HintHalted`: the server asked for more patience than this policy allows
+- `Halt` - stop retrying immediately, failing with the original error
 
 ### Named Policies & DSL (requires `std`)
 
@@ -201,23 +225,8 @@ Builder methods are shared with the sync driver. `async` implies `alloc`, not
 The closure must return a fresh future per attempt. Dropping the returned
 future cancels the retry.
 
-When the server dictates the delay (`Retry-After`, 429), skip the driver and
-own the loop:
-
-```rust,ignore
-let mut attempt = 1;
-loop {
-    match send().await {
-        Ok(resp) => break Ok(resp),
-        Err(e) if attempt < policy.max_attempts && e.is_retryable() => {
-            let wait = policy.calculate_delay(attempt, 1.0);
-            tokio::time::sleep(Duration::from_millis(wait)).await;
-            attempt += 1;
-        }
-        Err(e) => break Err(e),
-    }
-}
-```
+When the server dictates the delay (`Retry-After`, 429), chain `.delay_from()`
+(see Server-Hinted Delays above) - it is shared with the async driver.
 
 ## Backoff Strategies
 

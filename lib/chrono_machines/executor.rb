@@ -16,6 +16,7 @@ module ChronoMachines
       @max_delay = policy_options[:max_delay]
       @jitter_factor = policy_options[:jitter_factor]
       @retryable_exceptions = policy_options[:retryable_exceptions]
+      @delay_from = policy_options[:delay_from]
       @on_failure = policy_options[:on_failure]
       @on_retry = policy_options[:on_retry]
       @on_success = policy_options[:on_success]
@@ -47,7 +48,7 @@ module ChronoMachines
         end
 
         # Calculate delay
-        delay = calculate_delay(attempts)
+        delay = resolve_delay(e, attempts)
 
         # Call retry callback if defined
         @on_retry&.call(exception: e, attempt: attempts, next_delay: delay)
@@ -59,6 +60,29 @@ module ChronoMachines
     end
 
     private
+
+    # delay_from(exception:, attempt:) overrides the backoff: nil -> backoff,
+    # Numeric -> verbatim (beyond max_delay: halt), :halt/false -> re-raise.
+    def resolve_delay(exception, attempts)
+      return calculate_delay(attempts) unless @delay_from
+
+      hint = @delay_from.call(exception: exception, attempt: attempts)
+      case hint
+      when nil
+        calculate_delay(attempts)
+      when Numeric
+        if @max_delay && hint > @max_delay
+          handle_final_failure(exception, attempts)
+          raise exception
+        end
+        hint
+      when :halt, false
+        handle_final_failure(exception, attempts)
+        raise exception
+      else
+        raise ArgumentError, "delay_from must return nil, a Numeric, :halt or false; got #{hint.inspect}"
+      end
+    end
 
     # Pure Ruby implementation of delay calculation (exponential backoff)
     def ruby_calculate_delay_exponential(attempts)

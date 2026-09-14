@@ -18,6 +18,7 @@ module ChronoMachines
           max_delay: 10,   # seconds
           jitter_factor: 1.0, # 1.0 = full jitter (recommended), 0.0 = no jitter
           retryable_exceptions: [StandardError],
+          delay_from: nil, # Optional delay override from the exception (e.g. HTTP Retry-After)
           on_failure: nil, # Fallback block when all retries are exhausted
           on_retry: nil,   # Callback block when a retry occurs
           on_success: nil  # Callback block when operation succeeds

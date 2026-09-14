@@ -41,7 +41,7 @@ Gem::Specification.new do |spec|
                           CHANGELOG.md
                           LICENSE.txt
                         ]).select { |f| File.exist?(f) }
-                   .reject { |f| f =~ /\.(bundle|so|dll)\z/ || f.start_with?('ext/chrono_machines_native/target/') }
+                   .reject { |f| f =~ /\.(bundle|so|dll)\z/ || f.start_with?('ext/chrono_machines_native/target/') || f =~ %r{/tests(/|\.rs\z)} }
   spec.require_paths = ['lib']
 
   # Add native extension (only on CRuby/TruffleRuby)
