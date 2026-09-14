@@ -9,6 +9,7 @@ repository = "https://github.com/seuros/chrono_machines"
 keywords = ["retry", "backoff", "exponential", "jitter", "resilience"]
 categories = ["no-std", "algorithms"]
 readme = "README.md"
+exclude = ["tests/", "src/**/tests.rs"]
 
 [lib]
 name = "chrono_machines"
