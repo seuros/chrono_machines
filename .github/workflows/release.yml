@@ -19,7 +19,7 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
 
   build-ruby-gem:
@@ -38,7 +38,7 @@ jobs:
         run: bundle exec rake build
 
       - name: Upload ruby gem artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ruby-gem
           path: pkg/*.gem
@@ -77,7 +77,7 @@ jobs:
           cache-version: ${{ matrix.platform }}-v0
 
       - name: Upload platform gem artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: native-gem-${{ matrix.platform }}
           path: ${{ steps.cross.outputs.gem-path }}
@@ -91,7 +91,7 @@ jobs:
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -99,7 +99,7 @@ jobs:
         run: ls -R artifacts
 
       - name: Attach gems to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/**/*.gem
           tag_name: ${{ needs.release-please.outputs.tag_name }}
@@ -121,7 +121,7 @@ jobs:
           ruby-version: '3.4'
 
       - name: Download all gem artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
