@@ -195,6 +195,32 @@ ChronoMachines.retry(
 end
 ```
 
+### Server-Hinted Delays (`delay_from`)
+
+When the server tells you when to come back - HTTP 429 with `Retry-After` - guessing with exponential backoff is rude. `delay_from` lets the exception dictate the next delay:
+
+```ruby
+ChronoMachines.retry(
+  max_attempts: 5,
+  max_delay: 30,
+  retryable_exceptions: [MyClient::RateLimitError],
+  delay_from: ->(exception:, attempt:) {
+    exception.respond_to?(:retry_after) ? exception.retry_after : nil
+  }
+) do
+  call_rate_limited_api
+end
+```
+
+The hook's return value controls the retry:
+
+- `nil` - no hint; fall back to the policy's backoff strategy
+- `Numeric` - sleep exactly that many seconds (no jitter: the server picked the time, honor it)
+- a `Numeric` **beyond `max_delay`** - halt: the server asked for more patience than this policy allows, so the original exception propagates and the caller decides (background job, `Retry-After` response header, ...)
+- `:halt` or `false` - stop retrying immediately, propagate the original exception
+
+Anything else raises `ArgumentError` - a broken hook fails loudly instead of silently mangling your retry cadence.
+
 ## The Science of Temporal Jitter
 
 ChronoMachines implements **full jitter** exponential backoff:

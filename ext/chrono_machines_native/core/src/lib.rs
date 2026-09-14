@@ -81,7 +81,9 @@ pub use policy::{
     remove_global_policy,
 };
 #[cfg(any(feature = "std", feature = "alloc"))]
-pub use retry::{RetryBuilder, RetryContext, RetryError, RetryOutcome, Retryable, RetryableExt};
+pub use retry::{
+    DelayHint, RetryBuilder, RetryContext, RetryError, RetryOutcome, Retryable, RetryableExt,
+};
 #[cfg(feature = "async")]
 pub use retry::AsyncRetryable;
 #[cfg(feature = "async")]

@@ -114,6 +114,14 @@ pub trait BackoffStrategy {
 
     /// Maximum number of retry attempts permitted by this strategy.
     fn max_attempts(&self) -> u8;
+
+    /// Maximum delay this strategy will ever produce, if it has a cap.
+    ///
+    /// A `delay_from` hint beyond this cap halts the retry. `None` (the
+    /// default) means uncapped: every hint is honoured.
+    fn max_delay_ms(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// Exponential backoff strategy with configurable jitter
@@ -214,6 +222,10 @@ impl BackoffStrategy for ExponentialBackoff {
 
     fn max_attempts(&self) -> u8 {
         self.max_attempts
+    }
+
+    fn max_delay_ms(&self) -> Option<u64> {
+        Some(self.max_delay_ms)
     }
 }
 
@@ -383,6 +395,10 @@ impl BackoffStrategy for FibonacciBackoff {
     fn max_attempts(&self) -> u8 {
         self.max_attempts
     }
+
+    fn max_delay_ms(&self) -> Option<u64> {
+        Some(self.max_delay_ms)
+    }
 }
 
 /// Backoff policy that can represent any supported strategy.
@@ -432,6 +448,14 @@ impl BackoffStrategy for BackoffPolicy {
             BackoffPolicy::Exponential(policy) => policy.max_attempts(),
             BackoffPolicy::Constant(policy) => policy.max_attempts(),
             BackoffPolicy::Fibonacci(policy) => policy.max_attempts(),
+        }
+    }
+
+    fn max_delay_ms(&self) -> Option<u64> {
+        match self {
+            BackoffPolicy::Exponential(policy) => policy.max_delay_ms(),
+            BackoffPolicy::Constant(policy) => policy.max_delay_ms(),
+            BackoffPolicy::Fibonacci(policy) => policy.max_delay_ms(),
         }
     }
 }

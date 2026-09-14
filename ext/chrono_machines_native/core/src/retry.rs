@@ -25,6 +25,23 @@ type NotifyCallback<E> = Box<dyn FnMut(&RetryContext<E>) + Send>;
 /// Type alias for boxed failure callback
 type FailureCallback<E> = Box<dyn FnMut(&RetryError<E>) + Send>;
 
+/// Type alias for boxed delay_from hook
+type DelayFromHook<E> = Box<dyn FnMut(&E, u8) -> DelayHint + Send>;
+
+/// What a [`delay_from`](RetryBuilder::delay_from) hook wants the loop to do
+/// next. The Rust counterpart of the Ruby executor's nil / Numeric / :halt
+/// return values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DelayHint {
+    /// No opinion - use the backoff strategy.
+    Backoff,
+    /// Sleep exactly this long, no jitter. Beyond the strategy's max delay
+    /// the retry halts with [`RetryErrorKind::HintHalted`].
+    Ms(u64),
+    /// Stop retrying immediately, failing with the original error.
+    Halt,
+}
+
 /// Build a terminal [`RetryError`], firing the `on_failure` callback if present.
 fn finalize_failure<E>(
     on_failure: Option<&mut FailureCallback<E>>,
@@ -48,6 +65,9 @@ pub enum RetryErrorKind {
     Exhausted,
     /// The error was rejected by the `when` predicate.
     PredicateRejected,
+    /// A `delay_from` hint halted the retry, either explicitly or by asking
+    /// for a delay beyond the strategy's maximum.
+    HintHalted,
 }
 
 /// Context provided to retry callbacks with observability data.
@@ -139,6 +159,9 @@ where
             }
             RetryErrorKind::PredicateRejected => {
                 write!(f, "retry aborted by predicate on attempt {}", self.attempts)?;
+            }
+            RetryErrorKind::HintHalted => {
+                write!(f, "retry halted by delay_from hint on attempt {}", self.attempts)?;
             }
         }
 
@@ -238,6 +261,7 @@ where
             operation: self,
             backoff,
             when: None,
+            delay_from: None,
             notify: None,
             on_success: None,
             on_failure: None,
@@ -391,6 +415,7 @@ pub struct RetryBuilder<F, B, T, E, W> {
     operation: F,
     backoff: B,
     when: Option<W>,
+    delay_from: Option<DelayFromHook<E>>,
     notify: Option<NotifyCallback<E>>,
     on_success: Option<NotifyCallback<E>>,
     on_failure: Option<FailureCallback<E>>,
@@ -456,12 +481,38 @@ where
             operation: self.operation,
             backoff: self.backoff,
             when: Some(predicate),
+            delay_from: self.delay_from,
             notify: self.notify,
             on_success: self.on_success,
             on_failure: self.on_failure,
             _phantom_t: core::marker::PhantomData,
             _phantom_e: core::marker::PhantomData,
         }
+    }
+
+    /// Let the error dictate the next delay - e.g. HTTP `Retry-After` on 429s.
+    ///
+    /// Called with `(&error, attempt)` before each retry; the returned
+    /// [`DelayHint`] overrides the backoff strategy. A [`DelayHint::Ms`]
+    /// beyond the strategy's max delay halts with
+    /// [`RetryErrorKind::HintHalted`] - the server asked for more patience
+    /// than this policy allows.
+    ///
+    /// ```rust,ignore
+    /// let outcome = fetch
+    ///     .retry(ExponentialBackoff::default())
+    ///     .delay_from(|e: &ApiError, _attempt| match e.retry_after_ms() {
+    ///         Some(ms) => DelayHint::Ms(ms),
+    ///         None => DelayHint::Backoff,
+    ///     })
+    ///     .call()?;
+    /// ```
+    pub fn delay_from<C>(mut self, hook: C) -> Self
+    where
+        C: FnMut(&E, u8) -> DelayHint + Send + 'static,
+    {
+        self.delay_from = Some(Box::new(hook));
+        self
     }
 
     /// Add a notification callback that's invoked before each retry
@@ -568,13 +619,8 @@ where
             ));
         }
 
-        // Out of attempts, or the strategy declined to produce a delay.
-        let Some(delay_ms) = self
-            .backoff
-            .should_retry(attempt)
-            .then(|| self.backoff.delay(attempt, rng))
-            .flatten()
-        else {
+        // Out of attempts? Exhaustion wins over any delay hint.
+        if !self.backoff.should_retry(attempt) {
             return Step::Fail(finalize_failure(
                 self.on_failure.as_mut(),
                 RetryErrorKind::Exhausted,
@@ -583,6 +629,51 @@ where
                 cumulative_delay_ms,
                 error,
             ));
+        }
+
+        let hint = match self.delay_from {
+            Some(ref mut hook) => hook(&error, attempt),
+            None => DelayHint::Backoff,
+        };
+
+        let delay_ms = match hint {
+            DelayHint::Backoff => {
+                // The strategy may still decline to produce a delay.
+                let Some(delay_ms) = self.backoff.delay(attempt, rng) else {
+                    return Step::Fail(finalize_failure(
+                        self.on_failure.as_mut(),
+                        RetryErrorKind::Exhausted,
+                        attempt,
+                        max_attempts,
+                        cumulative_delay_ms,
+                        error,
+                    ));
+                };
+                delay_ms
+            }
+            DelayHint::Ms(delay_ms) => {
+                if self.backoff.max_delay_ms().is_some_and(|cap| delay_ms > cap) {
+                    return Step::Fail(finalize_failure(
+                        self.on_failure.as_mut(),
+                        RetryErrorKind::HintHalted,
+                        attempt,
+                        max_attempts,
+                        cumulative_delay_ms,
+                        error,
+                    ));
+                }
+                delay_ms
+            }
+            DelayHint::Halt => {
+                return Step::Fail(finalize_failure(
+                    self.on_failure.as_mut(),
+                    RetryErrorKind::HintHalted,
+                    attempt,
+                    max_attempts,
+                    cumulative_delay_ms,
+                    error,
+                ));
+            }
         };
 
         if let Some(ref mut notify) = self.notify {
@@ -752,6 +843,7 @@ where
             operation: self,
             backoff,
             when: None,
+            delay_from: None,
             notify: None,
             on_success: None,
             on_failure: None,
@@ -931,6 +1023,136 @@ mod tests {
     }
 
     #[test]
+    fn test_delay_from_hint_used_verbatim() {
+        use core::cell::Cell;
+        use std::sync::{Arc, Mutex};
+
+        let attempts = Cell::new(0);
+        let delays = Arc::new(Mutex::new(Vec::new()));
+        let delays_clone = Arc::clone(&delays);
+
+        let operation = || {
+            let current = attempts.get();
+            attempts.set(current + 1);
+            if current < 2 {
+                Err(TestError::Retryable)
+            } else {
+                Ok(42)
+            }
+        };
+
+        let result = operation
+            .retry(ExponentialBackoff::default().max_attempts(5))
+            .delay_from(|_e: &TestError, attempt| DelayHint::Ms(1000 * attempt as u64))
+            .notify(move |ctx| {
+                delays_clone.lock().unwrap().push(ctx.next_delay_ms);
+            })
+            .call_with_sleeper(FnSleeper(|_| {}));
+
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 3);
+        // Hints pass through untouched - no jitter.
+        assert_eq!(*delays.lock().unwrap(), vec![Some(1000), Some(2000)]);
+        assert_eq!(outcome.cumulative_delay_ms(), 3000);
+    }
+
+    #[test]
+    fn test_delay_from_backoff_falls_through_to_strategy() {
+        use core::cell::Cell;
+        use std::sync::{Arc, Mutex};
+
+        let attempts = Cell::new(0);
+        let delays = Arc::new(Mutex::new(Vec::new()));
+        let delays_clone = Arc::clone(&delays);
+
+        let operation = || {
+            let current = attempts.get();
+            attempts.set(current + 1);
+            if current < 1 {
+                Err(TestError::Retryable)
+            } else {
+                Ok(7)
+            }
+        };
+
+        let result = operation
+            .retry(ConstantBackoff::new().delay_ms(250).max_attempts(3))
+            .delay_from(|_e: &TestError, _attempt| DelayHint::Backoff)
+            .notify(move |ctx| {
+                delays_clone.lock().unwrap().push(ctx.next_delay_ms);
+            })
+            .call_with_sleeper(FnSleeper(|_| {}));
+
+        let outcome = result.expect("retry should succeed");
+        assert_eq!(outcome.attempts(), 2);
+        assert_eq!(*delays.lock().unwrap(), vec![Some(250)]);
+    }
+
+    #[test]
+    fn test_delay_from_halt_stops_retrying() {
+        use core::cell::Cell;
+
+        let attempts = Cell::new(0);
+
+        let operation = || {
+            attempts.set(attempts.get() + 1);
+            Err::<i32, TestError>(TestError::Retryable)
+        };
+
+        let result = operation
+            .retry(ExponentialBackoff::default().max_attempts(5))
+            .delay_from(|_e: &TestError, _attempt| DelayHint::Halt)
+            .call_with_sleeper(FnSleeper(|_| {}));
+
+        let err = result.expect_err("retry should halt");
+        assert_eq!(err.kind(), RetryErrorKind::HintHalted);
+        assert_eq!(err.attempts(), 1);
+        assert_eq!(err.cause(), Some(&TestError::Retryable));
+        assert_eq!(attempts.get(), 1);
+    }
+
+    #[test]
+    fn test_delay_from_hint_beyond_max_delay_halts() {
+        let operation = || Err::<i32, TestError>(TestError::Retryable);
+
+        let result = operation
+            .retry(
+                ExponentialBackoff::default()
+                    .max_delay_ms(10_000)
+                    .max_attempts(5),
+            )
+            .delay_from(|_e: &TestError, _attempt| DelayHint::Ms(60_000))
+            .call_with_sleeper(FnSleeper(|_| {}));
+
+        let err = result.expect_err("oversized hint should halt");
+        assert_eq!(err.kind(), RetryErrorKind::HintHalted);
+        assert_eq!(err.attempts(), 1);
+        assert_eq!(err.cause(), Some(&TestError::Retryable));
+    }
+
+    #[test]
+    fn test_delay_from_exhaustion_wins_over_hint() {
+        use core::cell::Cell;
+
+        let attempts = Cell::new(0);
+
+        let operation = || {
+            attempts.set(attempts.get() + 1);
+            Err::<i32, TestError>(TestError::Retryable)
+        };
+
+        let result = operation
+            .retry(ExponentialBackoff::default().max_attempts(2))
+            .delay_from(|_e: &TestError, _attempt| DelayHint::Ms(1))
+            .call_with_sleeper(FnSleeper(|_| {}));
+
+        let err = result.expect_err("retry should exhaust");
+        assert_eq!(err.kind(), RetryErrorKind::Exhausted);
+        assert_eq!(err.attempts(), 2);
+        assert_eq!(attempts.get(), 2);
+    }
+
+    #[test]
     fn test_retry_notify_callback() {
         use core::cell::Cell;
         #[cfg(feature = "std")]
@@ -1052,6 +1274,7 @@ mod tests {
                 let marker = match err.kind() {
                     RetryErrorKind::Exhausted => 1,
                     RetryErrorKind::PredicateRejected => 2,
+                    RetryErrorKind::HintHalted => 3,
                 };
                 FAILURE_KIND.store(marker, Ordering::SeqCst);
                 FAILURE_CUMULATIVE_DELAY.store(err.cumulative_delay_ms() as usize, Ordering::SeqCst);
