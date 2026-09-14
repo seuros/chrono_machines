@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.6.0...chrono-machines-v0.7.0) (2026-09-14)
+
+
+### Features
+
+* **core:** delay_from - server-hinted retry delays (HTTP Retry-After)  ([#25](https://github.com/seuros/chrono_machines/issues/25)) ([2dcf987](https://github.com/seuros/chrono_machines/commit/2dcf9871939b70c053144e9fc296914a3b6105e5))
+
 ## [0.6.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.5.0...chrono-machines-v0.6.0) (2026-08-23)
 
 
