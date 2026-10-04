@@ -106,6 +106,11 @@ fn apply_jitter(base: f64, jitter_factor: f64) -> f64 {
 /// Initialize the Ruby extension
 #[magnus::init]
 fn init(ruby: &Ruby) -> Result<(), Error> {
+    // Must precede every method definition: Ruby marks methods Ractor-safe as
+    // they are defined. The RNG is thread-local, so Ractors never share it.
+    // SAFETY: called on the loading thread during extension initialisation.
+    unsafe { rb_sys::rb_ext_ractor_safe(true) };
+
     // Create ChronoMachinesNative module
     let module = ruby.define_module("ChronoMachinesNative")?;
 

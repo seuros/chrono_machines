@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
                      'performance on CRuby with pure Ruby fallback for JRuby compatibility.'
   spec.homepage = 'https://github.com/seuros/chrono_machines'
   spec.license = 'MIT'
-  spec.required_ruby_version = '>= 3.3.0'
+  spec.required_ruby_version = '>= 4.0.0'
 
   # The generic `ruby` platform gem is pure source; native binaries ship only in
   # the platform gems cross-compiled by rb_sys.

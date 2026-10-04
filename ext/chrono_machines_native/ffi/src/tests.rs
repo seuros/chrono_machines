@@ -1,4 +1,5 @@
 use super::*;
+use core::assert_matches;
 use rand::SeedableRng;
 
 #[test]
@@ -9,10 +10,7 @@ fn test_exponential_delay() {
 
     let delay = calculate_delay_exponential(1, 0.0004, 1.0, 0.001, 0.5);
 
-    assert!(
-        delay >= 0.0002 && delay <= 0.0004,
-        "expected delay in [0.0002, 0.0004], got {delay}"
-    );
+    assert_matches!(delay, 0.0002..=0.0004);
 }
 
 #[test]
@@ -23,7 +21,7 @@ fn test_constant_delay() {
 
     // Constant delay with 10% jitter should be 90-100% of base
     let delay = calculate_delay_constant(5, 1.0, 0.1);
-    assert!(delay >= 0.9 && delay <= 1.0, "got {delay}");
+    assert_matches!(delay, 0.9..=1.0);
 
     // No jitter should return exact value
     let delay = calculate_delay_constant(3, 0.5, 0.0);
