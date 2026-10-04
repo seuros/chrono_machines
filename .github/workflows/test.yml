@@ -70,6 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test-mri
     strategy:
+      fail-fast: false
       matrix:
         ruby-version: ['jruby-10.1.2.0', 'truffleruby-40.0.0']
     env:
@@ -79,10 +80,17 @@ jobs:
       - name: Set up toolchain (mise)
         uses: jdx/mise-action@v5
         with:
+          # ruby-build checks the `java` on PATH, which mise does not provide
+          # while installing JRuby: install Java alone first.
+          install_args: ${{ startsWith(matrix.ruby-version, 'jruby') && 'java' || '' }}
           mise_toml: |
             [tools]
-            ruby = { version = "${{ matrix.ruby-version }}"${{ startsWith(matrix.ruby-version, 'jruby') && ', depends = ["java"]' || '' }} }
+            ruby = "${{ matrix.ruby-version }}"
             ${{ startsWith(matrix.ruby-version, 'jruby') && 'java = "temurin-21"' || '' }}
+
+      - name: Install JRuby on mise's Java
+        if: startsWith(matrix.ruby-version, 'jruby')
+        run: mise exec java -- mise install ruby
       - name: Cache gems
         uses: actions/cache@v6
         with:
