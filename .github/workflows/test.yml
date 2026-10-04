@@ -11,7 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust (mise)
+        uses: jdx/mise-action@v5
+        with:
+          install_args: rust
       - name: Run Rust core tests
         run: |
           cd ext/chrono_machines_native/core
@@ -25,10 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust (mise)
+        uses: jdx/mise-action@v5
         with:
-          targets: thumbv7em-none-eabihf
-          components: clippy
+          install_args: rust
       - name: Build pure no_std (bare metal)
         run: cargo build --no-default-features --target thumbv7em-none-eabihf
         working-directory: ext/chrono_machines_native/core
@@ -45,15 +48,21 @@ jobs:
     strategy:
       matrix:
         ruby-version: ['4.0']
+    env:
+      MISE_RUBY_VERSION: ${{ matrix.ruby-version }}
+      BUNDLE_PATH: vendor/bundle
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Set up Ruby ${{ matrix.ruby-version }}
-        uses: ruby/setup-ruby@v1
+      - name: Set up toolchain (mise)
+        uses: jdx/mise-action@v5
+      - name: Cache gems
+        uses: actions/cache@v6
         with:
-          ruby-version: ${{ matrix.ruby-version }}
-          bundler-cache: true
+          path: vendor/bundle
+          key: ${{ runner.os }}-gems-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile', '*.gemspec') }}
+
+      - name: Install gems
+        run: bundle install --jobs 4
       - name: Run tests
         run: bundle exec rake test
 
@@ -63,17 +72,24 @@ jobs:
     strategy:
       matrix:
         ruby-version: ['jruby-10.1.2.0', 'truffleruby-40.0.0']
+    env:
+      BUNDLE_PATH: vendor/bundle
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Java 21
-        uses: actions/setup-java@v6
+      - name: Set up toolchain (mise)
+        uses: jdx/mise-action@v5
         with:
-          distribution: 'temurin'
-          java-version: '21'
-      - name: Set up Ruby ${{ matrix.ruby-version }}
-        uses: ruby/setup-ruby@v1
+          mise_toml: |
+            [tools]
+            ruby = "${{ matrix.ruby-version }}"
+            ${{ startsWith(matrix.ruby-version, 'jruby') && 'java = "temurin-21"' || '' }}
+      - name: Cache gems
+        uses: actions/cache@v6
         with:
-          ruby-version: ${{ matrix.ruby-version }}
-          bundler-cache: true
+          path: vendor/bundle
+          key: ${{ runner.os }}-gems-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile', '*.gemspec') }}
+
+      - name: Install gems
+        run: bundle install --jobs 4
       - name: Run tests
         run: bundle exec rake test
