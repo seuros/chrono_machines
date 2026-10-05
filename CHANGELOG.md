@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.9.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.8.0...chrono_machines/v0.9.0) (2026-10-05)
+
+
+### Features
+
+* require Ruby 4.0, magnus 0.9, Ractor-safe native ext ([316d6f5](https://github.com/seuros/chrono_machines/commit/316d6f5e3de0f58e33d0a124eec4efafefb78cab))
+
 ## [0.8.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.5.0...chrono_machines/v0.8.0) (2026-09-14)
 
 
