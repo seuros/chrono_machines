@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.9.1](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.9.0...chrono_machines/v0.9.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **build:** skip host compile when packaging a cross gem ([5d5b61d](https://github.com/seuros/chrono_machines/commit/5d5b61da68a0815ef3a30f6fb731af844cbd45ee))
+
 ## [0.9.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.8.0...chrono_machines/v0.9.0) (2026-10-05)
 
 
