@@ -221,6 +221,37 @@ The hook's return value controls the retry:
 
 Anything else raises `ArgumentError` - a broken hook fails loudly instead of silently mangling your retry cadence.
 
+### Scheduling retries without sleeping
+
+`Executor#next_delay(attempt:, exception: nil)` returns seconds to wait, or `nil` to stop. `attempt: 1` means the initial call has failed; `max_attempts` includes that initial call. It uses the same backoff, jitter, exception rules, and `delay_from` hints as `call`, without executing work, sleeping, or running lifecycle callbacks. The caller owns the attempt count and scheduling. Without an exception, `delay_from` and exception filtering are skipped.
+
+For Active Job's `retry_on`, keep the attempt limit in sync with the policy:
+
+```ruby
+class FetchJob < ApplicationJob
+  RETRY_POLICY = ChronoMachines::Executor.new(max_attempts: 5, base_delay: 1)
+
+  retry_on IOError, attempts: 5,
+           wait: ->(executions) { RETRY_POLICY.next_delay(attempt: executions) }
+end
+```
+
+To use exception hints with durable jobs, pass the attempt count to the next job:
+
+```ruby
+def perform(record_id, attempt: 1)
+  fetch_record(record_id)
+rescue IOError => error
+  delay = RETRY_POLICY.next_delay(attempt: attempt, exception: error)
+  raise unless delay
+
+  self.class.set(wait_until: Time.current + delay)
+      .perform_later(record_id, attempt: attempt + 1)
+end
+```
+
+A hint beyond `max_delay` returns `nil`; it is never shortened to the cap. Use `random: Random.new(seed)` for deterministic jitter in tests, with either the Ruby or native backend.
+
 ## The Science of Temporal Jitter
 
 ChronoMachines implements **full jitter** exponential backoff:
@@ -245,10 +276,11 @@ This prevents the "thundering herd" problem where multiple clients retry simulta
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `max_attempts` | `3` | Maximum number of retry attempts |
+| `max_attempts` | `3` | Maximum number of attempts, including the initial call |
 | `base_delay` | `0.1` | Initial delay in seconds |
 | `multiplier` | `2` | Exponential backoff multiplier |
 | `max_delay` | `10` | Maximum delay cap in seconds |
+| `random` | `Random` | Random source for jitter; accepts `Random.new(seed)` |
 | `retryable_exceptions` | `[StandardError]` | Array of exception classes to retry |
 | `on_success` | `nil` | Success callback: `(result:, attempts:)` |
 | `on_retry` | `nil` | Retry callback: `(exception:, attempt:, next_delay:)` |
