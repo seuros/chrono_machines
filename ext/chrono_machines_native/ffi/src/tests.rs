@@ -49,6 +49,23 @@ fn test_fibonacci_delay() {
 }
 
 #[test]
+fn test_attempt_clamped_into_u8() {
+    const CASES: &[(i64, u8)] = &[
+        (i64::MIN, 1),
+        (-1, 1),
+        (0, 1),
+        (1, 1),
+        (200, 200),
+        (255, 255),
+        (256, 255),
+        (i64::MAX, 255),
+    ];
+    for &(attempt, expected) in CASES {
+        assert_eq!(attempt_u8(attempt), expected, "attempt: {attempt}");
+    }
+}
+
+#[test]
 fn test_fibonacci_sequence() {
     assert_eq!(fibonacci(0), 0);
     assert_eq!(fibonacci(1), 1);

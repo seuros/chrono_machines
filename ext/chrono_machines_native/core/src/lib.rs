@@ -1,4 +1,4 @@
-//! ChronoMachines - Pure Rust exponential backoff and retry library
+//! `ChronoMachines` - Pure Rust exponential backoff and retry library
 //!
 //! This crate provides a lightweight, `no_std` compatible implementation of
 //! exponential backoff with full jitter for retry mechanisms.
@@ -6,7 +6,7 @@
 //! # Features
 //!
 //! - **Full Jitter**: Prevents thundering herd problem
-//! - **no_std compatible**: Works in embedded environments
+//! - **`no_std` compatible**: Works in embedded environments
 //! - **Zero allocation**: Uses stack-only data structures
 //! - **Fast**: Minimal overhead for delay calculations
 //!
@@ -28,8 +28,6 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
-#![warn(rust_2024_compatibility)]
-#![warn(clippy::all)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -92,7 +90,6 @@ pub use sleep::AsyncSleeper;
 pub use sleep::StdSleeper;
 pub use sleep::{FnSleeper, Sleeper};
 
-use rand::RngExt;
 #[cfg(feature = "std")]
 use rand::rngs::StdRng;
 
@@ -124,8 +121,9 @@ impl Policy {
     /// - `max_attempts`: 3
     /// - `base_delay_ms`: 100
     /// - `multiplier`: 2.0
-    /// - `max_delay_ms`: 10_000
-    pub fn new() -> Self {
+    /// - `max_delay_ms`: `10_000`
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             max_attempts: 3,
             base_delay_ms: 100,
@@ -163,6 +161,7 @@ impl Policy {
     /// assert!(delay >= 90 && delay <= 100);
     /// ```
     #[cfg(feature = "std")]
+    #[must_use]
     pub fn calculate_delay(&self, attempt: u8, jitter_factor: f64) -> u64 {
         let mut rng: StdRng = rand::make_rng();
         self.calculate_delay_with_rng(attempt, jitter_factor, &mut rng)
@@ -191,31 +190,27 @@ impl Policy {
         jitter_factor: f64,
         rng: &mut R,
     ) -> u64 {
-        // Normalize jitter factor to the inclusive range [0.0, 1.0]
-        let mut jitter_factor = jitter_factor;
-        if jitter_factor.is_nan() {
-            jitter_factor = 1.0;
+        // NaN means "full jitter" here; `apply_jitter` clamps everything else
+        // into the inclusive range [0.0, 1.0].
+        let jitter_factor = if jitter_factor.is_nan() {
+            1.0
         } else {
-            jitter_factor = jitter_factor.clamp(0.0, 1.0);
-        }
+            jitter_factor
+        };
 
-        // Calculate base exponential backoff
-        let exponent = attempt.saturating_sub(1) as i32;
-        let base_exponential =
-            (self.base_delay_ms as f64) * crate::backoff::powi_f64(self.multiplier, exponent);
+        // Same arithmetic as `ExponentialBackoff`: base * multiplier^(attempt-1),
+        // capped at max_delay_ms.
+        let capped = backoff::exponential_ms(
+            self.base_delay_ms,
+            self.multiplier,
+            self.max_delay_ms,
+            attempt,
+        );
 
-        // Cap at max_delay
-        let capped = base_exponential.min(self.max_delay_ms as f64);
-
-        // Apply jitter: blend between deterministic and random delay
-        // jitter_factor of 1.0 = full jitter (0 to base), 0.0 = no jitter (exactly base)
-        // Formula: base * (1 - jitter_factor + rand * jitter_factor)
-        // Example with jitter_factor=0.1: base * (0.9 + rand*0.1) = 90% to 100% of base
-        let random_scalar: f64 = rng.random_range(0.0..=1.0);
-        let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
-        let jittered = capped * jitter_blend;
-
-        jittered as u64
+        // Blend between deterministic and random delay:
+        // base * (1 - jitter_factor + rand * jitter_factor), so 1.0 is full
+        // jitter (0 to base), 0.0 is exactly base, and 0.1 gives 90%-100% of base.
+        backoff::apply_jitter(capped, jitter_factor, rng)
     }
 
     /// Check if another retry should be attempted
@@ -227,7 +222,8 @@ impl Policy {
     /// # Returns
     ///
     /// `true` if another retry is allowed, `false` otherwise
-    pub fn should_retry(&self, current_attempt: u8) -> bool {
+    #[must_use]
+    pub const fn should_retry(&self, current_attempt: u8) -> bool {
         current_attempt < self.max_attempts
     }
 }

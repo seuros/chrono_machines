@@ -28,8 +28,11 @@ pub struct PolicyRegistry {
 #[cfg(any(feature = "std", feature = "alloc"))]
 impl PolicyRegistry {
     /// Create an empty registry.
-    pub fn new() -> Self {
-        Self::default()
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Insert or replace a policy under the given name.
@@ -56,6 +59,7 @@ impl PolicyRegistry {
     }
 
     /// Retrieve a policy by name.
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<BackoffPolicy> {
         self.entries
             .iter()
@@ -79,8 +83,9 @@ impl PolicyRegistry {
     }
 
     /// Return all registered policies as `(name, policy)` tuples.
+    #[must_use]
     pub fn all(&self) -> Vec<(String, BackoffPolicy)> {
-        self.entries.to_vec()
+        self.entries.clone()
     }
 
     /// Clear the registry.
@@ -90,12 +95,28 @@ impl PolicyRegistry {
 }
 
 #[cfg(feature = "std")]
-use std::sync::{OnceLock, RwLock};
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+/// Process-wide registry behind the `*_global_*` functions.
+#[cfg(feature = "std")]
+static GLOBAL_POLICIES: RwLock<PolicyRegistry> = RwLock::new(PolicyRegistry::new());
+
+// Poisoning is deliberately ignored by both accessors. No `PolicyRegistry`
+// method can unwind half-way through a mutation, so a lock poisoned by an
+// unrelated panic still guards a consistent registry; refusing service would
+// only turn that one panic into a panic on every later call.
+#[cfg(feature = "std")]
+fn read_global() -> RwLockReadGuard<'static, PolicyRegistry> {
+    GLOBAL_POLICIES
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 #[cfg(feature = "std")]
-fn global_registry() -> &'static RwLock<PolicyRegistry> {
-    static GLOBAL_POLICIES: OnceLock<RwLock<PolicyRegistry>> = OnceLock::new();
-    GLOBAL_POLICIES.get_or_init(|| RwLock::new(PolicyRegistry::new()))
+fn write_global() -> RwLockWriteGuard<'static, PolicyRegistry> {
+    GLOBAL_POLICIES
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Register a policy in the global registry (requires `std`).
@@ -104,86 +125,40 @@ pub fn register_global_policy(
     name: impl Into<String>,
     policy: BackoffPolicy,
 ) -> Option<BackoffPolicy> {
-    let mut guard = global_registry()
-        .write()
-        .expect("chronomachines global policy registry poisoned");
-    guard.register(name, policy)
+    // Allocate the key before taking the write lock, not inside it.
+    let name = name.into();
+    write_global().register(name, policy)
 }
 
 /// Fetch a policy from the global registry (requires `std`).
 #[cfg(feature = "std")]
+#[must_use]
 pub fn get_global_policy(name: &str) -> Option<BackoffPolicy> {
-    let guard = global_registry()
-        .read()
-        .expect("chronomachines global policy registry poisoned");
-    guard.get(name)
+    read_global().get(name)
 }
 
 /// Remove a policy from the global registry (requires `std`).
 #[cfg(feature = "std")]
+#[expect(
+    clippy::must_use_candidate,
+    reason = "removal is the point; discarding the returned policy is normal use"
+)]
 pub fn remove_global_policy(name: &str) -> Option<BackoffPolicy> {
-    let mut guard = global_registry()
-        .write()
-        .expect("chronomachines global policy registry poisoned");
-    guard.remove(name)
+    write_global().remove(name)
 }
 
 /// List all policies from the global registry (requires `std`).
 #[cfg(feature = "std")]
+#[must_use]
 pub fn list_global_policies() -> Vec<(String, BackoffPolicy)> {
-    let guard = global_registry()
-        .read()
-        .expect("chronomachines global policy registry poisoned");
-    guard.all()
+    read_global().all()
 }
 
 /// Clear all entries from the global registry (requires `std`).
 #[cfg(feature = "std")]
 pub fn clear_global_policies() {
-    let mut guard = global_registry()
-        .write()
-        .expect("chronomachines global policy registry poisoned");
-    guard.clear();
+    write_global().clear();
 }
 
-#[cfg(all(test, any(feature = "std", feature = "alloc")))]
-mod tests {
-    use super::*;
-    use crate::backoff::{BackoffPolicy, ExponentialBackoff};
-
-    #[test]
-    fn test_registry_crud() {
-        let mut registry = PolicyRegistry::new();
-        assert!(registry.get("missing").is_none());
-
-        let policy = BackoffPolicy::from(ExponentialBackoff::new().max_attempts(5));
-        assert!(registry.register("api", policy).is_none());
-        assert_eq!(registry.get("api").unwrap().max_attempts(), 5);
-
-        let new_policy = BackoffPolicy::from(ExponentialBackoff::new().max_attempts(3));
-        let replaced = registry.register("api", new_policy);
-        assert_eq!(replaced.unwrap().max_attempts(), 5);
-        assert_eq!(registry.get("api").unwrap().max_attempts(), 3);
-
-        let removed = registry.remove("api");
-        assert!(removed.is_some());
-        assert!(registry.get("api").is_none());
-    }
-
-    #[cfg(feature = "std")]
-    #[test]
-    fn test_global_registry_roundtrip() {
-        clear_global_policies();
-        assert!(list_global_policies().is_empty());
-
-        let policy = BackoffPolicy::from(ExponentialBackoff::new().max_attempts(4));
-        assert!(register_global_policy("workers", policy).is_none());
-
-        let fetched = get_global_policy("workers").unwrap();
-        assert_eq!(fetched.max_attempts(), 4);
-
-        let removed = remove_global_policy("workers").unwrap();
-        assert_eq!(removed.max_attempts(), 4);
-        assert!(get_global_policy("workers").is_none());
-    }
-}
+#[cfg(test)]
+mod tests;

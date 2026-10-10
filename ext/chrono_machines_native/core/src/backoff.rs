@@ -8,7 +8,7 @@ use rand::RngExt;
 
 /// `f64::powi`, implemented by hand so it works in `core` (`no_std`).
 #[inline]
-pub(crate) fn powi_f64(base: f64, exp: i32) -> f64 {
+fn powi_f64(base: f64, exp: i32) -> f64 {
     if exp == 0 {
         return 1.0;
     }
@@ -25,7 +25,36 @@ pub(crate) fn powi_f64(base: f64, exp: i32) -> f64 {
     acc
 }
 
+/// Widen a delay (or Fibonacci factor) to `f64` for the backoff arithmetic.
+///
+/// There is no lossless `u64 -> f64` conversion. Rounding only starts above
+/// 2^53 (2^53 ms is ~285,000 years), so every delay that can actually be slept
+/// converts exactly; larger values only ever lose to the `max_delay_ms` cap.
+#[inline]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "inherent to u64 -> f64; exact below 2^53"
+)]
+const fn lossy_f64(n: u64) -> f64 {
+    n as f64
+}
+
+/// Un-jittered exponential delay: `base_delay_ms * multiplier^(attempt - 1)`,
+/// capped at `max_delay_ms`.
+#[inline]
+pub(crate) fn exponential_ms(
+    base_delay_ms: u64,
+    multiplier: f64,
+    max_delay_ms: u64,
+    attempt: u8,
+) -> f64 {
+    let exponent = i32::from(attempt.saturating_sub(1));
+    let base_exponential = lossy_f64(base_delay_ms) * powi_f64(multiplier, exponent);
+    base_exponential.min(lossy_f64(max_delay_ms))
+}
+
 /// Calculate the nth Fibonacci number (1-indexed): 1, 1, 2, 3, 5, 8, 13, ...
+#[must_use]
 pub fn fibonacci(n: u8) -> u64 {
     match n {
         0 => 0,
@@ -47,7 +76,22 @@ pub fn fibonacci(n: u8) -> u64 {
 ///
 /// `jitter_factor` is clamped to `[0.0, 1.0]`: `0.0` returns `base` unchanged,
 /// `1.0` yields a uniform value in `[0, base]`.
-fn apply_jitter<R: Rng>(base: f64, jitter_factor: f64, rng: &mut R) -> u64 {
+// Clippy only suggests `mul_add` when `std` provides it; `core` has no
+// `f64::mul_add`, so the suggestion would break the `no_std` build.
+#[cfg_attr(
+    feature = "std",
+    expect(
+        clippy::suboptimal_flops,
+        reason = "`f64::mul_add` is std-only (breaks no_std) and would change the rounding"
+    )
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "`as` is the saturating float -> int conversion: NaN and negatives \
+              become 0, overflow becomes u64::MAX, which is the clamp we want"
+)]
+pub(crate) fn apply_jitter<R: Rng>(base: f64, jitter_factor: f64, rng: &mut R) -> u64 {
     let jitter_factor = jitter_factor.clamp(0.0, 1.0);
     let random_scalar: f64 = rng.random_range(0.0..=1.0);
     let jitter_blend = 1.0 - jitter_factor + random_scalar * jitter_factor;
@@ -126,7 +170,7 @@ pub trait BackoffStrategy {
 
 /// Exponential backoff strategy with configurable jitter
 ///
-/// Delays grow exponentially: base_delay * multiplier^(attempt-1)
+/// Delays grow exponentially: `base_delay_ms * multiplier^(attempt - 1)`
 ///
 /// # Example
 ///
@@ -156,43 +200,8 @@ pub struct ExponentialBackoff {
 
 impl ExponentialBackoff {
     /// Create a new exponential backoff builder with default values
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the base delay in milliseconds
-    pub fn base_delay_ms(mut self, ms: u64) -> Self {
-        self.base_delay_ms = ms;
-        self
-    }
-
-    /// Set the exponential multiplier
-    pub fn multiplier(mut self, multiplier: f64) -> Self {
-        self.multiplier = multiplier;
-        self
-    }
-
-    /// Set the maximum delay cap in milliseconds
-    pub fn max_delay_ms(mut self, ms: u64) -> Self {
-        self.max_delay_ms = ms;
-        self
-    }
-
-    /// Set the maximum number of attempts
-    pub fn max_attempts(mut self, attempts: u8) -> Self {
-        self.max_attempts = attempts;
-        self
-    }
-
-    /// Set the jitter factor (0.0 = no jitter, 1.0 = full jitter)
-    pub fn jitter_factor(mut self, factor: f64) -> Self {
-        self.jitter_factor = factor.clamp(0.0, 1.0);
-        self
-    }
-}
-
-impl Default for ExponentialBackoff {
-    fn default() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             max_attempts: 3,
             base_delay_ms: 100,
@@ -200,6 +209,47 @@ impl Default for ExponentialBackoff {
             max_delay_ms: 10_000,
             jitter_factor: 1.0, // Full jitter by default
         }
+    }
+
+    /// Set the base delay in milliseconds
+    #[must_use]
+    pub const fn base_delay_ms(mut self, ms: u64) -> Self {
+        self.base_delay_ms = ms;
+        self
+    }
+
+    /// Set the exponential multiplier
+    #[must_use]
+    pub const fn multiplier(mut self, multiplier: f64) -> Self {
+        self.multiplier = multiplier;
+        self
+    }
+
+    /// Set the maximum delay cap in milliseconds
+    #[must_use]
+    pub const fn max_delay_ms(mut self, ms: u64) -> Self {
+        self.max_delay_ms = ms;
+        self
+    }
+
+    /// Set the maximum number of attempts
+    #[must_use]
+    pub const fn max_attempts(mut self, attempts: u8) -> Self {
+        self.max_attempts = attempts;
+        self
+    }
+
+    /// Set the jitter factor (0.0 = no jitter, 1.0 = full jitter)
+    #[must_use]
+    pub const fn jitter_factor(mut self, factor: f64) -> Self {
+        self.jitter_factor = factor.clamp(0.0, 1.0);
+        self
+    }
+}
+
+impl Default for ExponentialBackoff {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -209,9 +259,12 @@ impl BackoffStrategy for ExponentialBackoff {
             return None;
         }
 
-        let exponent = attempt.saturating_sub(1) as i32;
-        let base_exponential = (self.base_delay_ms as f64) * powi_f64(self.multiplier, exponent);
-        let capped = base_exponential.min(self.max_delay_ms as f64);
+        let capped = exponential_ms(
+            self.base_delay_ms,
+            self.multiplier,
+            self.max_delay_ms,
+            attempt,
+        );
 
         Some(apply_jitter(capped, self.jitter_factor, rng))
     }
@@ -255,24 +308,32 @@ pub struct ConstantBackoff {
 
 impl ConstantBackoff {
     /// Create a new constant backoff builder with default values
-    pub fn new() -> Self {
-        Self::default()
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            delay_ms: 100,
+            max_attempts: 3,
+            jitter_factor: 0.0, // No jitter for constant by default
+        }
     }
 
     /// Set the constant delay in milliseconds
-    pub fn delay_ms(mut self, ms: u64) -> Self {
+    #[must_use]
+    pub const fn delay_ms(mut self, ms: u64) -> Self {
         self.delay_ms = ms;
         self
     }
 
     /// Set the maximum number of attempts
-    pub fn max_attempts(mut self, attempts: u8) -> Self {
+    #[must_use]
+    pub const fn max_attempts(mut self, attempts: u8) -> Self {
         self.max_attempts = attempts;
         self
     }
 
     /// Set the jitter factor (0.0 = no jitter, 1.0 = full jitter)
-    pub fn jitter_factor(mut self, factor: f64) -> Self {
+    #[must_use]
+    pub const fn jitter_factor(mut self, factor: f64) -> Self {
         self.jitter_factor = factor.clamp(0.0, 1.0);
         self
     }
@@ -280,11 +341,7 @@ impl ConstantBackoff {
 
 impl Default for ConstantBackoff {
     fn default() -> Self {
-        Self {
-            delay_ms: 100,
-            max_attempts: 3,
-            jitter_factor: 0.0, // No jitter for constant by default
-        }
+        Self::new()
     }
 }
 
@@ -294,7 +351,11 @@ impl BackoffStrategy for ConstantBackoff {
             return None;
         }
 
-        Some(apply_jitter(self.delay_ms as f64, self.jitter_factor, rng))
+        Some(apply_jitter(
+            lossy_f64(self.delay_ms),
+            self.jitter_factor,
+            rng,
+        ))
     }
 
     fn should_retry(&self, attempt: u8) -> bool {
@@ -309,7 +370,7 @@ impl BackoffStrategy for ConstantBackoff {
 /// Fibonacci backoff strategy
 ///
 /// Delays follow the Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13, ...
-/// Each delay is base_delay_ms * fibonacci(attempt).
+/// Each delay is `base_delay_ms * fibonacci(attempt)`.
 ///
 /// # Example
 ///
@@ -336,30 +397,40 @@ pub struct FibonacciBackoff {
 
 impl FibonacciBackoff {
     /// Create a new Fibonacci backoff builder with default values
-    pub fn new() -> Self {
-        Self::default()
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            base_delay_ms: 100,
+            max_delay_ms: 10_000,
+            max_attempts: 8,
+            jitter_factor: 1.0, // Full jitter by default
+        }
     }
 
     /// Set the base delay in milliseconds
-    pub fn base_delay_ms(mut self, ms: u64) -> Self {
+    #[must_use]
+    pub const fn base_delay_ms(mut self, ms: u64) -> Self {
         self.base_delay_ms = ms;
         self
     }
 
     /// Set the maximum delay cap in milliseconds
-    pub fn max_delay_ms(mut self, ms: u64) -> Self {
+    #[must_use]
+    pub const fn max_delay_ms(mut self, ms: u64) -> Self {
         self.max_delay_ms = ms;
         self
     }
 
     /// Set the maximum number of attempts
-    pub fn max_attempts(mut self, attempts: u8) -> Self {
+    #[must_use]
+    pub const fn max_attempts(mut self, attempts: u8) -> Self {
         self.max_attempts = attempts;
         self
     }
 
     /// Set the jitter factor (0.0 = no jitter, 1.0 = full jitter)
-    pub fn jitter_factor(mut self, factor: f64) -> Self {
+    #[must_use]
+    pub const fn jitter_factor(mut self, factor: f64) -> Self {
         self.jitter_factor = factor.clamp(0.0, 1.0);
         self
     }
@@ -367,12 +438,7 @@ impl FibonacciBackoff {
 
 impl Default for FibonacciBackoff {
     fn default() -> Self {
-        Self {
-            base_delay_ms: 100,
-            max_delay_ms: 10_000,
-            max_attempts: 8,
-            jitter_factor: 1.0, // Full jitter by default
-        }
+        Self::new()
     }
 }
 
@@ -383,7 +449,8 @@ impl BackoffStrategy for FibonacciBackoff {
         }
 
         let fib = fibonacci(attempt);
-        let base = ((self.base_delay_ms as f64) * (fib as f64)).min(self.max_delay_ms as f64);
+        let base =
+            (lossy_f64(self.base_delay_ms) * lossy_f64(fib)).min(lossy_f64(self.max_delay_ms));
 
         Some(apply_jitter(base, self.jitter_factor, rng))
     }
@@ -417,11 +484,12 @@ pub enum BackoffPolicy {
 
 impl BackoffPolicy {
     /// Return the maximum retry attempts for the wrapped strategy.
-    pub fn max_attempts(&self) -> u8 {
+    #[must_use]
+    pub const fn max_attempts(&self) -> u8 {
         match self {
-            BackoffPolicy::Exponential(policy) => policy.max_attempts,
-            BackoffPolicy::Constant(policy) => policy.max_attempts,
-            BackoffPolicy::Fibonacci(policy) => policy.max_attempts,
+            Self::Exponential(policy) => policy.max_attempts,
+            Self::Constant(policy) => policy.max_attempts,
+            Self::Fibonacci(policy) => policy.max_attempts,
         }
     }
 }
@@ -429,52 +497,52 @@ impl BackoffPolicy {
 impl BackoffStrategy for BackoffPolicy {
     fn delay<R: Rng>(&self, attempt: u8, rng: &mut R) -> Option<u64> {
         match self {
-            BackoffPolicy::Exponential(policy) => policy.delay(attempt, rng),
-            BackoffPolicy::Constant(policy) => policy.delay(attempt, rng),
-            BackoffPolicy::Fibonacci(policy) => policy.delay(attempt, rng),
+            Self::Exponential(policy) => policy.delay(attempt, rng),
+            Self::Constant(policy) => policy.delay(attempt, rng),
+            Self::Fibonacci(policy) => policy.delay(attempt, rng),
         }
     }
 
     fn should_retry(&self, attempt: u8) -> bool {
         match self {
-            BackoffPolicy::Exponential(policy) => policy.should_retry(attempt),
-            BackoffPolicy::Constant(policy) => policy.should_retry(attempt),
-            BackoffPolicy::Fibonacci(policy) => policy.should_retry(attempt),
+            Self::Exponential(policy) => policy.should_retry(attempt),
+            Self::Constant(policy) => policy.should_retry(attempt),
+            Self::Fibonacci(policy) => policy.should_retry(attempt),
         }
     }
 
     fn max_attempts(&self) -> u8 {
         match self {
-            BackoffPolicy::Exponential(policy) => policy.max_attempts(),
-            BackoffPolicy::Constant(policy) => policy.max_attempts(),
-            BackoffPolicy::Fibonacci(policy) => policy.max_attempts(),
+            Self::Exponential(policy) => policy.max_attempts(),
+            Self::Constant(policy) => policy.max_attempts(),
+            Self::Fibonacci(policy) => policy.max_attempts(),
         }
     }
 
     fn max_delay_ms(&self) -> Option<u64> {
         match self {
-            BackoffPolicy::Exponential(policy) => policy.max_delay_ms(),
-            BackoffPolicy::Constant(policy) => policy.max_delay_ms(),
-            BackoffPolicy::Fibonacci(policy) => policy.max_delay_ms(),
+            Self::Exponential(policy) => policy.max_delay_ms(),
+            Self::Constant(policy) => policy.max_delay_ms(),
+            Self::Fibonacci(policy) => policy.max_delay_ms(),
         }
     }
 }
 
 impl From<ExponentialBackoff> for BackoffPolicy {
     fn from(value: ExponentialBackoff) -> Self {
-        BackoffPolicy::Exponential(value)
+        Self::Exponential(value)
     }
 }
 
 impl From<ConstantBackoff> for BackoffPolicy {
     fn from(value: ConstantBackoff) -> Self {
-        BackoffPolicy::Constant(value)
+        Self::Constant(value)
     }
 }
 
 impl From<FibonacciBackoff> for BackoffPolicy {
     fn from(value: FibonacciBackoff) -> Self {
-        BackoffPolicy::Fibonacci(value)
+        Self::Fibonacci(value)
     }
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use core::assert_matches;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
@@ -95,11 +96,7 @@ fn test_jitter_factor() {
 
     // 10% jitter: delay should be between 900ms (90%) and 1000ms (100%)
     let delay = policy.calculate_delay_with_rng(1, 0.1, &mut rng);
-    assert!(
-        delay >= 900 && delay <= 1000,
-        "delay {} not in range 900-1000",
-        delay
-    );
+    assert_matches!(delay, 900..=1000);
 
     // No jitter: delay should be exactly base_delay_ms
     let delay = policy.calculate_delay_with_rng(1, 0.0, &mut rng);
@@ -129,8 +126,7 @@ fn test_jitter_factor_clamping() {
     let delay = policy.calculate_delay_with_rng(1, 2.0, &mut rng);
     assert!(
         delay <= 1000,
-        "jitter_factor > 1.0 should clamp to 1.0, got delay {}",
-        delay
+        "jitter_factor > 1.0 should clamp to 1.0, got delay {delay}"
     );
 
     // Extreme values should still be clamped
@@ -139,4 +135,45 @@ fn test_jitter_factor_clamping() {
 
     let delay = policy.calculate_delay_with_rng(1, -999.0, &mut rng);
     assert_eq!(delay, 1000, "extreme negative should clamp to 0.0");
+}
+
+/// `Policy` computes its delay through the same code as `ExponentialBackoff`,
+/// so one seed must give one delay. NaN is the exception by design: `Policy`
+/// reads it as full jitter.
+#[test]
+fn test_policy_matches_exponential_backoff() {
+    const JITTER: &[(f64, f64)] = &[
+        (0.0, 0.0),
+        (0.1, 0.1),
+        (1.0, 1.0),
+        (-2.0, 0.0),
+        (3.0, 1.0),
+        (f64::NAN, 1.0),
+    ];
+
+    let policy = Policy {
+        max_attempts: 10,
+        base_delay_ms: 150,
+        multiplier: 1.7,
+        max_delay_ms: 4_000,
+    };
+
+    for &(policy_jitter, backoff_jitter) in JITTER {
+        let backoff = ExponentialBackoff::new()
+            .base_delay_ms(150)
+            .multiplier(1.7)
+            .max_delay_ms(4_000)
+            .max_attempts(10)
+            .jitter_factor(backoff_jitter);
+        let mut policy_rng = StdRng::seed_from_u64(7);
+        let mut backoff_rng = StdRng::seed_from_u64(7);
+
+        for attempt in 1..10 {
+            assert_eq!(
+                Some(policy.calculate_delay_with_rng(attempt, policy_jitter, &mut policy_rng)),
+                backoff.delay(attempt, &mut backoff_rng),
+                "attempt {attempt}, jitter {policy_jitter}"
+            );
+        }
+    }
 }

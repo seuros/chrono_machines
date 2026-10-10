@@ -88,3 +88,20 @@ fn test_jitter_application() {
     // All delays should be <= base delay
     assert!(delays.iter().all(|&d| d <= 1000));
 }
+
+/// The constructors and setters are `const`, so a policy can be a `const` or
+/// `static` (in flash, on embedded) instead of being rebuilt at runtime.
+#[test]
+fn test_builders_are_const() {
+    const EXPONENTIAL: ExponentialBackoff =
+        ExponentialBackoff::new().max_attempts(5).jitter_factor(2.0);
+    const CONSTANT: ConstantBackoff = ConstantBackoff::new().delay_ms(250);
+    const FIBONACCI: FibonacciBackoff = FibonacciBackoff::new().base_delay_ms(10);
+    const POLICY: BackoffPolicy = BackoffPolicy::Exponential(EXPONENTIAL);
+    const { assert!(POLICY.max_attempts() == 5) };
+
+    assert_eq!(EXPONENTIAL.max_attempts, 5);
+    assert_eq!(EXPONENTIAL.jitter_factor, 1.0, "clamped at compile time");
+    assert_eq!(CONSTANT.delay_ms, 250);
+    assert_eq!(FIBONACCI.base_delay_ms, 10);
+}

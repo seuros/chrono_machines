@@ -25,7 +25,7 @@ type NotifyCallback<E> = Box<dyn FnMut(&RetryContext<E>) + Send>;
 /// Type alias for boxed failure callback
 type FailureCallback<E> = Box<dyn FnMut(&RetryError<E>) + Send>;
 
-/// Type alias for boxed delay_from hook
+/// Type alias for boxed `delay_from` hook
 type DelayFromHook<E> = Box<dyn FnMut(&E, u8) -> DelayHint + Send>;
 
 /// What a [`delay_from`](RetryBuilder::delay_from) hook wants the loop to do
@@ -103,7 +103,7 @@ pub struct RetryError<E> {
 }
 
 impl<E> RetryError<E> {
-    fn new(
+    const fn new(
         kind: RetryErrorKind,
         attempts: u8,
         max_attempts: u8,
@@ -120,7 +120,7 @@ impl<E> RetryError<E> {
     }
 
     /// Retrieve the underlying cause when available.
-    pub fn cause(&self) -> Option<&E> {
+    pub const fn cause(&self) -> Option<&E> {
         self.cause.as_ref()
     }
 
@@ -130,22 +130,22 @@ impl<E> RetryError<E> {
     }
 
     /// Attempt number that produced the terminal outcome (1-indexed).
-    pub fn attempts(&self) -> u8 {
+    pub const fn attempts(&self) -> u8 {
         self.attempts
     }
 
     /// Maximum attempts allowed by the policy.
-    pub fn max_attempts(&self) -> u8 {
+    pub const fn max_attempts(&self) -> u8 {
         self.max_attempts
     }
 
     /// Total time spent in delays before reaching terminal state.
-    pub fn cumulative_delay_ms(&self) -> u64 {
+    pub const fn cumulative_delay_ms(&self) -> u64 {
         self.cumulative_delay_ms
     }
 
     /// Error category.
-    pub fn kind(&self) -> RetryErrorKind {
+    pub const fn kind(&self) -> RetryErrorKind {
         self.kind
     }
 }
@@ -178,7 +178,7 @@ where
         write!(f, " (cumulative delay {}ms)", self.cumulative_delay_ms)?;
 
         if let Some(cause) = self.cause.as_ref() {
-            write!(f, ": {}", cause)?;
+            write!(f, ": {cause}")?;
         }
 
         Ok(())
@@ -197,7 +197,7 @@ pub struct RetryOutcome<T> {
 }
 
 impl<T> RetryOutcome<T> {
-    fn new(value: T, attempts: u8, cumulative_delay_ms: u64) -> Self {
+    const fn new(value: T, attempts: u8, cumulative_delay_ms: u64) -> Self {
         Self {
             value,
             attempts,
@@ -206,17 +206,17 @@ impl<T> RetryOutcome<T> {
     }
 
     /// Attempt that succeeded (1-indexed).
-    pub fn attempts(&self) -> u8 {
+    pub const fn attempts(&self) -> u8 {
         self.attempts
     }
 
     /// Total milliseconds spent sleeping between attempts.
-    pub fn cumulative_delay_ms(&self) -> u64 {
+    pub const fn cumulative_delay_ms(&self) -> u64 {
         self.cumulative_delay_ms
     }
 
     /// Borrow the successful value.
-    pub fn value(&self) -> &T {
+    pub const fn value(&self) -> &T {
         &self.value
     }
 
@@ -306,11 +306,11 @@ pub trait RetryableExt<T, E>: Retryable<T, E> {
     /// Create a retry builder with exponential backoff using default configuration
     ///
     /// Default configuration:
-    /// - max_attempts: 3
-    /// - base_delay_ms: 100
-    /// - multiplier: 2.0
-    /// - max_delay_ms: 10_000
-    /// - jitter_factor: 1.0 (full jitter)
+    /// - `max_attempts`: 3
+    /// - `base_delay_ms`: 100
+    /// - `multiplier`: 2.0
+    /// - `max_delay_ms`: `10_000`
+    /// - `jitter_factor`: 1.0 (full jitter)
     ///
     /// # Returns
     ///
@@ -343,8 +343,8 @@ pub trait RetryableExt<T, E>: Retryable<T, E> {
     /// * `delay_ms` - Fixed delay in milliseconds between retry attempts
     ///
     /// Default configuration (besides delay):
-    /// - max_attempts: 3
-    /// - jitter_factor: 0.0 (no jitter)
+    /// - `max_attempts`: 3
+    /// - `jitter_factor`: 0.0 (no jitter)
     ///
     /// # Returns
     ///
@@ -377,10 +377,10 @@ pub trait RetryableExt<T, E>: Retryable<T, E> {
     /// Create a retry builder with Fibonacci backoff using default configuration
     ///
     /// Default configuration:
-    /// - max_attempts: 8
-    /// - base_delay_ms: 100
-    /// - max_delay_ms: 10_000
-    /// - jitter_factor: 1.0 (full jitter)
+    /// - `max_attempts`: 8
+    /// - `base_delay_ms`: 100
+    /// - `max_delay_ms`: `10_000`
+    /// - `jitter_factor`: 1.0 (full jitter)
     ///
     /// Delays follow the Fibonacci sequence: 100ms, 100ms, 200ms, 300ms, 500ms...
     ///
@@ -424,6 +424,7 @@ impl<F, T, E> RetryableExt<T, E> for F where F: Retryable<T, E> {}
 /// * `T` - The success return type
 /// * `E` - The error type
 /// * `W` - The when predicate type
+#[must_use = "a RetryBuilder does nothing until one of its `call*` methods runs it"]
 pub struct RetryBuilder<F, B, T, E, W> {
     operation: F,
     backoff: B,
@@ -644,10 +645,10 @@ where
             ));
         }
 
-        let hint = match self.delay_from {
-            Some(ref mut hook) => hook(&error, attempt),
-            None => DelayHint::Backoff,
-        };
+        let hint = self
+            .delay_from
+            .as_mut()
+            .map_or(DelayHint::Backoff, |hook| hook(&error, attempt));
 
         let delay_ms = match hint {
             DelayHint::Backoff => {
@@ -721,6 +722,10 @@ where
     ///
     /// The final result after all retry attempts (success or final error)
     ///
+    /// # Errors
+    ///
+    /// See [`call_with_sleeper_and_rng`](Self::call_with_sleeper_and_rng).
+    ///
     /// # Example
     ///
     /// ```rust
@@ -758,6 +763,10 @@ where
     /// # Returns
     ///
     /// The final result after all retry attempts
+    ///
+    /// # Errors
+    ///
+    /// See [`call_with_sleeper_and_rng`](Self::call_with_sleeper_and_rng).
     ///
     /// # Example
     ///
@@ -797,6 +806,18 @@ where
     ///
     /// * `sleeper` - Implementation of the [`Sleeper`] trait
     /// * `rng` - Random number generator used for jitter
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`RetryError`] carrying the operation's last error when the
+    /// retry gives up: [`RetryErrorKind::Exhausted`] once the strategy is out
+    /// of attempts, [`RetryErrorKind::PredicateRejected`] when the `when`
+    /// predicate declines the error, or [`RetryErrorKind::HintHalted`] when a
+    /// `delay_from` hook halts.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "published signature; sleepers are ZST/fn-pointer values passed inline"
+    )]
     pub fn call_with_sleeper_and_rng<S: Sleeper, R: rand::Rng>(
         mut self,
         sleeper: S,
@@ -904,6 +925,10 @@ where
     /// the operation or mid-sleep. The in-flight attempt is dropped with it, so
     /// the operation must be cancel-safe if that matters to the caller;
     /// `on_failure` does not fire, because nothing failed.
+    ///
+    /// # Errors
+    ///
+    /// See [`call_async_with_rng`](Self::call_async_with_rng).
     #[cfg(feature = "std")]
     pub async fn call_async<S: crate::sleep::AsyncSleeper>(
         self,
@@ -919,6 +944,11 @@ where
     /// [`call_with_sleeper_and_rng`](Self::call_with_sleeper_and_rng): callers
     /// provide their own [`rand::Rng`] for jitter instead of relying on the
     /// `std`-only `make_rng`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`call_with_sleeper_and_rng`](Self::call_with_sleeper_and_rng):
+    /// both drivers share one retry policy.
     pub async fn call_async_with_rng<S: crate::sleep::AsyncSleeper, R: rand::Rng>(
         mut self,
         sleeper: S,

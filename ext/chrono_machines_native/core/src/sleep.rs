@@ -1,4 +1,4 @@
-//! Sleep abstraction for no_std compatibility
+//! Sleep abstraction for `no_std` compatibility
 //!
 //! Two traits live here, and which one you want is decided by your runtime:
 //!

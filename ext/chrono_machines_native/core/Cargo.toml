@@ -1,7 +1,8 @@
 [package]
 name = "chrono-machines"
 version = "0.8.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 authors = ["Abdelkader Boudih <terminale@gmail.com>"]
 license = "MIT"
 description = "Exponential, constant, and Fibonacci backoff retry library with full jitter support - no_std compatible"
@@ -29,3 +30,6 @@ rand = { version = "0.10", default-features = false, features = ["std_rng"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
+
+[lints]
+workspace = true

@@ -16,7 +16,7 @@ fn tokio_sleeper() -> impl Fn(u64) -> tokio::time::Sleep {
     |ms| tokio::time::sleep(Duration::from_millis(ms))
 }
 
-fn fixed(delay_ms: u64, max_attempts: u8) -> ConstantBackoff {
+const fn fixed(delay_ms: u64, max_attempts: u8) -> ConstantBackoff {
     ConstantBackoff::new()
         .delay_ms(delay_ms)
         .max_attempts(max_attempts)
@@ -79,10 +79,11 @@ async fn a_waiting_retry_does_not_block_the_executor() {
         })
     };
 
-    let _ = (|| async { Err::<(), _>("always") })
+    (|| async { Err::<(), _>("always") })
         .retry_async(fixed(50, 3))
         .call_async(tokio_sleeper())
-        .await;
+        .await
+        .expect_err("exhausts its attempts");
 
     // 100ms of retry delay on a single thread: the other task must have run.
     assert!(

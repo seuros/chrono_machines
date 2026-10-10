@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unnecessary_wraps,
+    reason = "fixtures must have the `FnMut() -> Result<T, E>` shape `.retry()` accepts"
+)]
+
 use super::*;
 use crate::backoff::{ConstantBackoff, ExponentialBackoff};
 use crate::sleep::FnSleeper;
@@ -114,7 +119,7 @@ fn test_delay_from_hint_used_verbatim() {
 
     let result = operation
         .retry(ExponentialBackoff::default().max_attempts(5))
-        .delay_from(|_e: &TestError, attempt| DelayHint::Ms(1000 * attempt as u64))
+        .delay_from(|_e: &TestError, attempt| DelayHint::Ms(1000 * u64::from(attempt)))
         .notify(move |ctx| {
             delays_clone.lock().unwrap().push(ctx.next_delay_ms);
         })
@@ -276,10 +281,10 @@ fn test_retry_notify_callback() {
 #[test]
 fn test_on_success_callback_invoked() {
     use core::cell::Cell;
-    use core::sync::atomic::{AtomicUsize, Ordering};
+    use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     static SUCCESS_ATTEMPT: AtomicUsize = AtomicUsize::new(0);
-    static SUCCESS_CUMULATIVE_DELAY: AtomicUsize = AtomicUsize::new(0);
+    static SUCCESS_CUMULATIVE_DELAY: AtomicU64 = AtomicU64::new(0);
 
     let attempts = Cell::new(0);
 
@@ -306,7 +311,7 @@ fn test_on_success_callback_invoked() {
         )
         .on_success(|ctx| {
             SUCCESS_ATTEMPT.store(ctx.attempt as usize, Ordering::SeqCst);
-            SUCCESS_CUMULATIVE_DELAY.store(ctx.cumulative_delay_ms as usize, Ordering::SeqCst);
+            SUCCESS_CUMULATIVE_DELAY.store(ctx.cumulative_delay_ms, Ordering::SeqCst);
             assert!(ctx.error.is_none());
             assert!(ctx.next_delay_ms.is_none());
         })
@@ -321,10 +326,10 @@ fn test_on_success_callback_invoked() {
 
 #[test]
 fn test_on_failure_callback_invoked() {
-    use core::sync::atomic::{AtomicUsize, Ordering};
+    use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     static FAILURE_KIND: AtomicUsize = AtomicUsize::new(0);
-    static FAILURE_CUMULATIVE_DELAY: AtomicUsize = AtomicUsize::new(0);
+    static FAILURE_CUMULATIVE_DELAY: AtomicU64 = AtomicU64::new(0);
 
     fn always_fails() -> Result<(), TestError> {
         Err(TestError::Retryable)
@@ -348,7 +353,7 @@ fn test_on_failure_callback_invoked() {
                 RetryErrorKind::HintHalted => 3,
             };
             FAILURE_KIND.store(marker, Ordering::SeqCst);
-            FAILURE_CUMULATIVE_DELAY.store(err.cumulative_delay_ms() as usize, Ordering::SeqCst);
+            FAILURE_CUMULATIVE_DELAY.store(err.cumulative_delay_ms(), Ordering::SeqCst);
         })
         .call_with_sleeper(FnSleeper(|_| {}));
 
@@ -537,9 +542,8 @@ fn test_retry_context_on_success() {
     assert_eq!(outcome.cumulative_delay_ms(), 100); // 2 delays of 50ms
 
     // Verify success context
-    let ctx = success_context.lock().unwrap();
-    assert!(ctx.is_some());
-    let (attempt, next_delay, cumulative, no_error) = ctx.unwrap();
+    let ctx = *success_context.lock().unwrap();
+    let (attempt, next_delay, cumulative, no_error) = ctx.expect("on_success should have fired");
     assert_eq!(attempt, 3);
     assert_eq!(next_delay, None); // No next delay on success
     assert_eq!(cumulative, 100);

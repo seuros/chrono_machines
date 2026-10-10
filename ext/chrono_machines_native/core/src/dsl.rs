@@ -22,7 +22,7 @@ pub enum DslError<E> {
 
 impl<E> From<RetryError<E>> for DslError<E> {
     fn from(value: RetryError<E>) -> Self {
-        DslError::Execution(value)
+        Self::Execution(value)
     }
 }
 
@@ -32,8 +32,8 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DslError::PolicyMissing(name) => write!(f, "retry policy '{}' is not registered", name),
-            DslError::Execution(err) => write!(f, "{err}"),
+            Self::PolicyMissing(name) => write!(f, "retry policy '{name}' is not registered"),
+            Self::Execution(err) => write!(f, "{err}"),
         }
     }
 }
@@ -41,6 +41,11 @@ where
 impl<E> std::error::Error for DslError<E> where E: fmt::Display + std::error::Error {}
 
 /// Construct a [`RetryBuilder`] using a named policy from the global registry.
+///
+/// # Errors
+///
+/// Returns [`DslError::PolicyMissing`] when no policy is registered under
+/// `policy_name`.
 pub fn builder_for_policy<F, T, E>(
     policy_name: &str,
     operation: F,
@@ -55,6 +60,12 @@ where
 }
 
 /// Execute an operation using a named policy from the global registry.
+///
+/// # Errors
+///
+/// Returns [`DslError::PolicyMissing`] when no policy is registered under
+/// `policy_name`, or [`DslError::Execution`] wrapping the [`RetryError`] when
+/// the retry gives up.
 pub fn retry_with_policy<F, T, E>(
     policy_name: &str,
     operation: F,
