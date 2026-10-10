@@ -21,7 +21,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chrono-machines = "0.5" # x-release-please-version
+chrono-machines = "0.8.0" # x-release-please-version
 ```
 
 ### Basic Example
@@ -73,11 +73,14 @@ let operation = || {
 # #[cfg(feature = "std")]
 let outcome = operation
     .retry(ExponentialBackoff::default().max_attempts(5))
-    .notify(|err, attempt, delay| {
-        println!("attempt {attempt} failed ({err}), next delay {delay}ms");
+    .notify(|ctx| {
+        if let Some(err) = ctx.error {
+            let next = ctx.next_delay_ms.unwrap_or(0);
+            println!("attempt {} failed ({err}), next delay {next}ms", ctx.attempt);
+        }
     })
-    .on_success(|value, attempt| {
-        println!("attempt {attempt} succeeded with {value}");
+    .on_success(|ctx| {
+        println!("attempt {} succeeded", ctx.attempt);
     })
     .on_failure(|err| {
         eprintln!("retry stopped: {err}");
@@ -139,7 +142,7 @@ assert_eq!(outcome.attempts(), 1);
 
 ChronoMachines implements **full jitter** exponential backoff:
 
-```
+```text
 delay = random(0, min(base * multiplier^(attempt-1), max))  // with jitter_factor = 1.0
 ```
 
@@ -166,7 +169,7 @@ Disable default features for `no_std` environments:
 
 ```toml
 [dependencies]
-chrono-machines = { version = "0.5", default-features = false } # x-release-please-version
+chrono-machines = { version = "0.8.0", default-features = false } # x-release-please-version
 ```
 
 Pure `no_std` (no allocator) gives you the delay math (`Policy`,
@@ -181,7 +184,7 @@ vector-backed `PolicyRegistry`, all without `std`:
 
 ```toml
 [dependencies]
-chrono-machines = { version = "0.5", default-features = false, features = ["alloc"] } # x-release-please-version
+chrono-machines = { version = "0.8.0", default-features = false, features = ["alloc"] } # x-release-please-version
 ```
 
 Drive a retry loop with a caller-supplied sleeper and RNG:
@@ -192,6 +195,7 @@ use rand::{rngs::StdRng, SeedableRng};
 
 let sleeper = chrono_machines::sleep::FnSleeper(|_ms| { /* embedded delay */ });
 let rng = StdRng::seed_from_u64(0xC0FFEE);
+# let operation = || Ok::<_, &str>("done");
 
 let outcome = operation
     .retry(ExponentialBackoff::default().max_attempts(5))
@@ -204,7 +208,7 @@ let outcome = operation
 
 ```toml
 [dependencies]
-chrono-machines = { version = "0.5", features = ["async"] } # x-release-please-version
+chrono-machines = { version = "0.8.0", features = ["async"] } # x-release-please-version
 ```
 
 ```rust,ignore
@@ -235,13 +239,17 @@ Delays grow exponentially: `base * multiplier^(attempt-1)`
 
 ```rust
 use chrono_machines::{ExponentialBackoff, Retryable};
+# let operation = || Ok::<_, &str>("done");
 
-operation.retry(
-    ExponentialBackoff::new()
-        .base_delay_ms(100)
-        .multiplier(2.0)
-        .max_delay_ms(10_000)
-).call()
+let result = operation
+    .retry(
+        ExponentialBackoff::new()
+            .base_delay_ms(100)
+            .multiplier(2.0)
+            .max_delay_ms(10_000),
+    )
+    .call();
+# assert!(result.is_ok());
 ```
 
 ### Constant Backoff
@@ -249,12 +257,12 @@ Fixed delay with optional jitter
 
 ```rust
 use chrono_machines::{ConstantBackoff, Retryable};
+# let operation = || Ok::<_, &str>("done");
 
-operation.retry(
-    ConstantBackoff::new()
-        .delay_ms(500)
-        .jitter_factor(0.1)
-).call()
+let result = operation
+    .retry(ConstantBackoff::new().delay_ms(500).jitter_factor(0.1))
+    .call();
+# assert!(result.is_ok());
 ```
 
 ### Fibonacci Backoff
@@ -262,12 +270,12 @@ Delays grow by Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13...
 
 ```rust
 use chrono_machines::{FibonacciBackoff, Retryable};
+# let operation = || Ok::<_, &str>("done");
 
-operation.retry(
-    FibonacciBackoff::new()
-        .base_delay_ms(100)
-        .max_delay_ms(5_000)
-).call()
+let result = operation
+    .retry(FibonacciBackoff::new().base_delay_ms(100).max_delay_ms(5_000))
+    .call();
+# assert!(result.is_ok());
 ```
 
 ## License

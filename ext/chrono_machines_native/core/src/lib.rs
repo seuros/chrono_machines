@@ -236,3 +236,8 @@ impl Default for Policy {
 
 #[cfg(test)]
 mod tests;
+
+/// Compiles and runs the README's examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
