@@ -1,5 +1,7 @@
 use super::*;
 use crate::backoff::{BackoffPolicy, ExponentialBackoff};
+#[cfg(feature = "std")]
+use crate::test_support::lock_global_registry;
 
 #[test]
 fn test_registry_crud() {
@@ -23,6 +25,7 @@ fn test_registry_crud() {
 #[cfg(feature = "std")]
 #[test]
 fn test_global_registry_roundtrip() {
+    let _registry = lock_global_registry();
     clear_global_policies();
     assert!(list_global_policies().is_empty());
 
@@ -38,10 +41,11 @@ fn test_global_registry_roundtrip() {
 }
 
 /// A panic while the global lock is held must not brick the registry for the
-/// rest of the process. Read-only on purpose: other tests share the global.
+/// rest of the process.
 #[cfg(feature = "std")]
 #[test]
 fn test_global_registry_survives_poisoning() {
+    let _registry = lock_global_registry();
     let poisoned = std::panic::catch_unwind(|| {
         let _guard = GLOBAL_POLICIES.write();
         panic!("poison the global policy registry");

@@ -237,6 +237,11 @@ impl Default for Policy {
 #[cfg(test)]
 mod tests;
 
+// A bare `cfg(test)` (not `all(test, ..)`) so clippy treats it as test code.
+#[cfg(test)]
+#[cfg(feature = "std")]
+mod test_support;
+
 /// Compiles and runs the README's examples as doctests.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]

@@ -1,9 +1,11 @@
 use super::*;
 use crate::backoff::{BackoffPolicy, ExponentialBackoff};
 use crate::policy::{clear_global_policies, register_global_policy};
+use crate::test_support::lock_global_registry;
 
 #[test]
 fn test_retry_with_policy_success() {
+    let _registry = lock_global_registry();
     clear_global_policies();
     register_global_policy(
         "default",
@@ -27,6 +29,7 @@ fn test_retry_with_policy_success() {
 
 #[test]
 fn test_retry_with_policy_missing() {
+    let _registry = lock_global_registry();
     clear_global_policies();
     let result = retry_with_policy::<_, (), &str>("missing", || Ok(()));
     match result {
