@@ -177,3 +177,27 @@ fn test_policy_matches_exponential_backoff() {
         }
     }
 }
+
+/// The `no_std` retry driver: a caller-supplied sleeper and RNG, no `std`.
+#[cfg(feature = "alloc")]
+#[test]
+fn test_retry_with_caller_sleeper_and_rng() {
+    use crate::retry::Retryable;
+    use crate::sleep::FnSleeper;
+
+    let mut attempts = 0_u8;
+    let outcome = (|| {
+        attempts += 1;
+        if attempts < 3 {
+            Err("transient")
+        } else {
+            Ok(attempts)
+        }
+    })
+    .retry(ExponentialBackoff::new().base_delay_ms(1).max_attempts(5))
+    .call_with_sleeper_and_rng(FnSleeper(|_ms| {}), StdRng::seed_from_u64(7))
+    .expect("succeeds on the third attempt");
+
+    assert_eq!(outcome.attempts(), 3);
+    assert_eq!(outcome.into_inner(), 3);
+}

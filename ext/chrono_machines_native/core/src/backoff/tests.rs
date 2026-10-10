@@ -79,14 +79,21 @@ fn test_jitter_application() {
     let backoff = ConstantBackoff::new().delay_ms(1000).jitter_factor(1.0); // Full jitter
 
     let mut rng = StdRng::seed_from_u64(42);
-    let delays: Vec<u64> = (1..10).filter_map(|i| backoff.delay(i, &mut rng)).collect();
-
-    // With full jitter, delays should vary
-    let all_different = delays.windows(2).any(|w| w[0] != w[1]);
-    assert!(all_different, "Full jitter should produce varying delays");
-
-    // All delays should be <= base delay
-    assert!(delays.iter().all(|&d| d <= 1000));
+    // No `Vec`: this test also runs in the no-alloc build.
+    let mut previous = None;
+    let mut varied = false;
+    for attempt in 1..10 {
+        let Some(delay) = backoff.delay(attempt, &mut rng) else {
+            continue;
+        };
+        assert!(
+            delay <= 1000,
+            "attempt {attempt}: {delay}ms exceeds the base delay"
+        );
+        varied |= previous.is_some_and(|prev| prev != delay);
+        previous = Some(delay);
+    }
+    assert!(varied, "Full jitter should produce varying delays");
 }
 
 /// The constructors and setters are `const`, so a policy can be a `const` or

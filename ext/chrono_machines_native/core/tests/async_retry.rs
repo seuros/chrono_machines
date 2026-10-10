@@ -3,7 +3,7 @@
 //! These are integration tests on purpose: they go through the public API, so
 //! they also prove the `async` feature re-exports what callers need.
 
-#![cfg(feature = "async")]
+#![cfg(all(feature = "async", feature = "std"))]
 
 use chrono_machines::{AsyncRetryable, ConstantBackoff, ExponentialBackoff};
 use std::sync::Arc;

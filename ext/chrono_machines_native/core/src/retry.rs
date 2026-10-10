@@ -972,5 +972,8 @@ where
     }
 }
 
+// These tests drive `call`/`call_with_sleeper` and share `std` sync types;
+// the `no_std` driver is covered from the crate-root tests.
 #[cfg(test)]
+#[cfg(feature = "std")]
 mod tests;
