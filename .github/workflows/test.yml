@@ -23,6 +23,15 @@ jobs:
         run: |
           cd ext/chrono_machines_native/core
           cargo test --doc
+      - name: Lint and test every feature combination
+        working-directory: ext/chrono_machines_native/core
+        run: |
+          for features in "" alloc async std alloc,async; do
+            echo "::group::features: ${features:-none}"
+            cargo clippy --no-default-features --features "$features" --all-targets -- -D warnings
+            cargo test --no-default-features --features "$features" --lib --tests
+            echo "::endgroup::"
+          done
 
   test-no-std:
     runs-on: ubuntu-latest
