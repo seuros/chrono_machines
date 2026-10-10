@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.8.0...chrono-machines-v0.8.1) (2026-10-10)
+
+
+### Performance Improvements
+
+* allocate outside the policy registry lock; adopt clippy pedantic and nursery ([80b40d8](https://github.com/seuros/chrono_machines/commit/80b40d87e5869c74b356a71425639ebf560cec4e))
+
 ## [0.8.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.7.0...chrono-machines-v0.8.0) (2026-09-14)
 
 
