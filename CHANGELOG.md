@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- `Executor#next_delay` returns retry delays without sleeping or executing work, with an optional random source for deterministic jitter.
+
 ## [0.9.2](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.9.1...chrono_machines/v0.9.2) (2026-10-10)
 
 
