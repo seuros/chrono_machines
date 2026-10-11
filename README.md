@@ -236,6 +236,8 @@ class FetchJob < ApplicationJob
 end
 ```
 
+`retry_on` calls `wait` only while `executions < attempts`. If the two limits drift apart, `next_delay` returns `nil` and Active Job retries immediately, so keep `attempts:` equal to `max_attempts`.
+
 To use exception hints with durable jobs, pass the attempt count to the next job:
 
 ```ruby
@@ -269,6 +271,8 @@ ChronoMachines implements **full jitter** exponential backoff:
 ```
 
 This prevents the "thundering herd" problem where multiple clients retry simultaneously, overwhelming recovering services.
+
+Jitter is drawn from the `random:` option (Ruby's `Random` by default) on both backends; the native extension computes only the un-jittered base delay.
 
 ## Configuration Reference
 
