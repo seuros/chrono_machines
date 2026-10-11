@@ -22,32 +22,34 @@ begin
 
       # Override calculate_delay to dispatch to native implementations
       def calculate_delay(attempts)
-        case @backoff_strategy
-        when :exponential
-          ChronoMachinesNative.exponential_delay(
-            attempts,
-            @base_delay,
-            @multiplier,
-            @max_delay,
-            normalized_jitter_factor
-          )
-        when :constant
-          ChronoMachinesNative.constant_delay(
-            attempts,
-            @base_delay,
-            normalized_jitter_factor
-          )
-        when :fibonacci
-          ChronoMachinesNative.fibonacci_delay(
-            attempts,
-            @base_delay,
-            @max_delay,
-            normalized_jitter_factor
-          )
-        else
-          # Unknown strategy, fall back to Ruby
-          super
-        end
+        delay = case @backoff_strategy
+                when :exponential
+                  ChronoMachinesNative.exponential_delay(
+                    attempts,
+                    @base_delay,
+                    @multiplier,
+                    @max_delay,
+                    0.0
+                  )
+                when :constant
+                  ChronoMachinesNative.constant_delay(
+                    attempts,
+                    @base_delay,
+                    0.0
+                  )
+                when :fibonacci
+                  ChronoMachinesNative.fibonacci_delay(
+                    attempts,
+                    @base_delay,
+                    @max_delay,
+                    0.0
+                  )
+                else
+                  # Unknown strategy, fall back to Ruby
+                  return super
+                end
+
+        apply_jitter(delay)
       end
     end
 

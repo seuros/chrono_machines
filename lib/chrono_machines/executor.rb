@@ -15,11 +15,20 @@ module ChronoMachines
       @multiplier = policy_options[:multiplier] || 2
       @max_delay = policy_options[:max_delay]
       @jitter_factor = policy_options[:jitter_factor]
+      @random = policy_options.fetch(:random, Random)
       @retryable_exceptions = policy_options[:retryable_exceptions]
       @delay_from = policy_options[:delay_from]
       @on_failure = policy_options[:on_failure]
       @on_retry = policy_options[:on_retry]
       @on_success = policy_options[:on_success]
+    end
+
+    def next_delay(attempt:, exception: nil)
+      raise ArgumentError, 'attempt must be a positive Integer' unless attempt.is_a?(Integer) && attempt.positive?
+      return if exception && !retryable_exception?(exception)
+      return if attempt >= @max_attempts
+
+      resolve_delay(exception, attempt)
     end
 
     def call
@@ -34,21 +43,13 @@ module ChronoMachines
 
         result
       rescue StandardError => e
-        # Check if exception is retryable
-        unless @retryable_exceptions.any? { |ex| e.is_a?(ex) }
-          # Non-retryable exception - call failure callback and re-raise
+        delay = next_delay(attempt: attempts, exception: e)
+        unless delay
           handle_final_failure(e, attempts)
-          raise e
-        end
+          raise MaxRetriesExceededError.new(e, attempts) if retryable_exception?(e) && attempts >= @max_attempts
 
-        # Check if we've exhausted all attempts
-        if attempts >= @max_attempts
-          handle_final_failure(e, attempts)
-          raise MaxRetriesExceededError.new(e, attempts)
+          raise
         end
-
-        # Calculate delay
-        delay = resolve_delay(e, attempts)
 
         # Call retry callback if defined
         @on_retry&.call(exception: e, attempt: attempts, next_delay: delay)
@@ -61,24 +62,25 @@ module ChronoMachines
 
     private
 
+    def retryable_exception?(exception)
+      @retryable_exceptions.any? { |type| exception.is_a?(type) }
+    end
+
     # delay_from(exception:, attempt:) overrides the backoff: nil -> backoff,
-    # Numeric -> verbatim (beyond max_delay: halt), :halt/false -> re-raise.
+    # Numeric -> verbatim (beyond max_delay: halt), :halt/false -> stop.
     def resolve_delay(exception, attempts)
-      return calculate_delay(attempts) unless @delay_from
+      return calculate_delay(attempts) unless exception && @delay_from
 
       hint = @delay_from.call(exception: exception, attempt: attempts)
       case hint
       when nil
         calculate_delay(attempts)
       when Numeric
-        if @max_delay && hint > @max_delay
-          handle_final_failure(exception, attempts)
-          raise exception
-        end
+        return if @max_delay && hint > @max_delay
+
         hint
       when :halt, false
-        handle_final_failure(exception, attempts)
-        raise exception
+        nil
       else
         raise ArgumentError, "delay_from must return nil, a Numeric, :halt or false; got #{hint.inspect}"
       end
@@ -87,22 +89,19 @@ module ChronoMachines
     # Pure Ruby implementation of delay calculation (exponential backoff)
     def ruby_calculate_delay_exponential(attempts)
       base_exponential_delay = [@base_delay * (@multiplier**(attempts - 1)), @max_delay].min
-      jitter_factor = normalized_jitter_factor
-      base_exponential_delay * (1 - jitter_factor + (rand * jitter_factor))
+      apply_jitter(base_exponential_delay)
     end
 
     # Pure Ruby implementation of constant backoff
     def ruby_calculate_delay_constant(_attempts)
-      jitter_factor = normalized_jitter_factor
-      @base_delay * (1 - jitter_factor + (rand * jitter_factor))
+      apply_jitter(@base_delay)
     end
 
     # Pure Ruby implementation of Fibonacci backoff
     def ruby_calculate_delay_fibonacci(attempts)
       fib = fibonacci(attempts)
       base_delay = [@base_delay * fib, @max_delay].min
-      jitter_factor = normalized_jitter_factor
-      base_delay * (1 - jitter_factor + (rand * jitter_factor))
+      apply_jitter(base_delay)
     end
 
     # Calculate Fibonacci number (1-indexed)
@@ -133,6 +132,11 @@ module ChronoMachines
 
     # By default, use Ruby implementation (may be overridden by native extension)
     alias_method :calculate_delay, :ruby_calculate_delay
+
+    def apply_jitter(delay)
+      jitter_factor = normalized_jitter_factor
+      delay * (1 - jitter_factor + (@random.rand * jitter_factor))
+    end
 
     def robust_sleep(delay)
       # Handle potential interruptions to sleep
