@@ -15,7 +15,8 @@ module ChronoMachines
       @multiplier = policy_options[:multiplier] || 2
       @max_delay = policy_options[:max_delay]
       @jitter_factor = policy_options[:jitter_factor]
-      @random = policy_options.fetch(:random, Random)
+      @random = policy_options[:random] || Random
+      raise ArgumentError, "random must respond to #rand; got #{@random.inspect}" unless @random.respond_to?(:rand)
       @retryable_exceptions = policy_options[:retryable_exceptions]
       @delay_from = policy_options[:delay_from]
       @on_failure = policy_options[:on_failure]
@@ -48,7 +49,7 @@ module ChronoMachines
           handle_final_failure(e, attempts)
           raise MaxRetriesExceededError.new(e, attempts) if retryable_exception?(e) && attempts >= @max_attempts
 
-          raise
+          raise e
         end
 
         # Call retry callback if defined

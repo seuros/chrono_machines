@@ -93,6 +93,18 @@ class NextDelayTest < Minitest::Test
     end
   end
 
+  def test_nil_random_falls_back_to_random
+    executor = ChronoMachines::Executor.new(base_delay: 1, max_delay: 1, jitter_factor: 1.0, random: nil)
+
+    assert_includes 0.0..1.0, executor.next_delay(attempt: 1)
+  end
+
+  def test_rejects_a_random_source_without_rand
+    error = assert_raises(ArgumentError) { ChronoMachines::Executor.new(random: Object.new) }
+
+    assert_match(/random must respond to #rand/, error.message)
+  end
+
   def test_inline_retries_use_the_same_delays
     options = { base_delay: 1, jitter_factor: 0.5, max_attempts: 3 }
     policy = ChronoMachines::Executor.new(**options, random: Random.new(42))
