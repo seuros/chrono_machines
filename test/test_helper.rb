@@ -15,3 +15,10 @@ rescue LoadError
 end
 require 'chrono_machines'
 require 'chrono_machines/test_helper'
+
+# `rake test TESTOPTS=--coverage` measures with padded_cell; this shapes the report.
+if defined?(PaddedCell.coverage)
+  PaddedCell.coverage do
+    track 'lib/**/*.rb' # files the suite never loads report at 0%
+  end
+end
