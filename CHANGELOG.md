@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [0.10.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.9.2...chrono_machines/v0.10.0) (2026-10-11)
+
+
+### Features
+
+* expose retry delays without executing or sleeping ([#30](https://github.com/seuros/chrono_machines/issues/30)) ([2f6ce19](https://github.com/seuros/chrono_machines/commit/2f6ce1999c7d2056d3adc8e57e0025c22087ca01))
+
+
+### Bug Fixes
+
+* reject a jitter random source without #rand ([50734ee](https://github.com/seuros/chrono_machines/commit/50734eee35608d8a8324b38cf38f9ab1cc101c65))
+
 ## [0.9.2](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.9.1...chrono_machines/v0.9.2) (2026-10-10)
 
 
