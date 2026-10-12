@@ -223,6 +223,8 @@ Anything else raises `ArgumentError` - a broken hook fails loudly instead of sil
 
 ### Scheduling retries without sleeping
 
+See the [Rails integration guide](docs/RAILS_INTEGRATION.md) for Active Job patterns, policy callbacks, and safe retries.
+
 `Executor#next_delay(attempt:, exception: nil)` returns seconds to wait, or `nil` to stop. `attempt: 1` means the initial call has failed; `max_attempts` includes that initial call. It uses the same backoff, jitter, exception rules, and `delay_from` hints as `call`, without executing work, sleeping, or running lifecycle callbacks. The caller owns the attempt count and scheduling. Without an exception, `delay_from` and exception filtering are skipped.
 
 For Active Job's `retry_on`, keep the attempt limit in sync with the policy:
