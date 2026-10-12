@@ -4,7 +4,6 @@ source 'https://rubygems.org'
 
 gemspec
 
-gem 'activejob', '~> 8.1'
 gem 'minitest', '~> 6.0'
 gem 'rake', '~> 13.0'
 gem 'zeitwerk', '~> 2.7'

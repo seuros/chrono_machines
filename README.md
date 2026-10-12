@@ -221,38 +221,9 @@ The hook's return value controls the retry:
 
 Anything else raises `ArgumentError` - a broken hook fails loudly instead of silently mangling your retry cadence.
 
-### Active Job (optional)
-
-Require the adapter explicitly and choose a named policy for each job:
-
-```ruby
-require 'chrono_machines/active_job'
-
-ChronoMachines.configure do |config|
-  config.define_policy :external_api,
-    max_attempts: 5,
-    base_delay: 1,
-    max_delay: 60,
-    retryable_exceptions: [IOError]
-end
-
-class FetchJob < ActiveJob::Base
-  include ChronoMachines::ActiveJob
-  chrono_retry :external_api
-
-  def perform(record_id)
-    fetch_external_data(record_id)
-  end
-end
-```
-
-The adapter wraps job performance with Rails callbacks and schedules retries through `retry_job`, without sleeping. Active Job serializes the failure count per policy. Only matching failures consume the policy's attempt limit; manual readiness retries do not. A subclass inherits its parent's policy and can select another with `chrono_retry`.
-
-Policies retain their exception rules, backoff, jitter, `delay_from`, and `on_retry`, `on_success`, and `on_failure` callbacks. When the policy stops retrying, the original exception continues through Rails' normal error handling, including `rescue_from` and `after_discard`. As with the inline executor, errors in `on_failure` do not hide the original exception.
-
-Active Job is optional: loading `chrono_machines` alone does not load Rails or require it as a runtime dependency.
-
 ### Scheduling retries without sleeping
+
+See the [Rails integration guide](docs/RAILS_INTEGRATION.md) for Active Job patterns, policy callbacks, and safe retries.
 
 `Executor#next_delay(attempt:, exception: nil)` returns seconds to wait, or `nil` to stop. `attempt: 1` means the initial call has failed; `max_attempts` includes that initial call. It uses the same backoff, jitter, exception rules, and `delay_from` hints as `call`, without executing work, sleeping, or running lifecycle callbacks. The caller owns the attempt count and scheduling. Without an exception, `delay_from` and exception filtering are skipped.
 
