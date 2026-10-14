@@ -2,7 +2,9 @@
   "packages": {
     ".": {
       "release-type": "ruby",
-      "package-name": "chrono_machines"
+      "package-name": "chrono_machines",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true
     },
     "ext/chrono_machines_native/core": {
       "release-type": "rust",
