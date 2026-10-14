@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.9.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.8.1...chrono-machines-v0.9.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** RetryError::cause() returns &E and into_cause() returns E instead of Option.
+
+### Features
+
+* **core:** RetryError always carries its cause ([e5222a3](https://github.com/seuros/chrono_machines/commit/e5222a3c394974ba86605944f02d820345cbae8e))
+
 ## [0.8.1](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.8.0...chrono-machines-v0.8.1) (2026-10-10)
 
 
