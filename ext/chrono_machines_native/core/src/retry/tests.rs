@@ -70,11 +70,7 @@ fn test_retry_exhausted() {
     assert_eq!(err.attempts(), 3);
     assert_eq!(err.max_attempts(), 3);
     assert!(err.cumulative_delay_ms() > 0);
-    if let Some(cause) = err.cause() {
-        assert_eq!(cause, &TestError::Retryable);
-    } else {
-        panic!("expected underlying cause");
-    }
+    assert_eq!(err.cause(), &TestError::Retryable);
 }
 
 #[test]
@@ -91,11 +87,7 @@ fn test_retry_when_predicate() {
     // Fatal error should not be retried
     let err = result.expect_err("retry should stop due to predicate");
     assert_eq!(err.kind(), RetryErrorKind::PredicateRejected);
-    if let Some(cause) = err.cause() {
-        assert_eq!(cause, &TestError::Fatal);
-    } else {
-        panic!("expected underlying cause");
-    }
+    assert_eq!(err.cause(), &TestError::Fatal);
 }
 
 #[test]
@@ -183,7 +175,7 @@ fn test_delay_from_halt_stops_retrying() {
     let err = result.expect_err("retry should halt");
     assert_eq!(err.kind(), RetryErrorKind::HintHalted);
     assert_eq!(err.attempts(), 1);
-    assert_eq!(err.cause(), Some(&TestError::Retryable));
+    assert_eq!(err.cause(), &TestError::Retryable);
     assert_eq!(attempts.get(), 1);
 }
 
@@ -203,7 +195,7 @@ fn test_delay_from_hint_beyond_max_delay_halts() {
     let err = result.expect_err("oversized hint should halt");
     assert_eq!(err.kind(), RetryErrorKind::HintHalted);
     assert_eq!(err.attempts(), 1);
-    assert_eq!(err.cause(), Some(&TestError::Retryable));
+    assert_eq!(err.cause(), &TestError::Retryable);
 }
 
 #[test]

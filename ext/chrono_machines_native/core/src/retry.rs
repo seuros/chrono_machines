@@ -51,13 +51,7 @@ fn finalize_failure<E>(
     cumulative_delay_ms: u64,
     error: E,
 ) -> RetryError<E> {
-    let retry_error = RetryError::new(
-        kind,
-        attempt,
-        max_attempts,
-        cumulative_delay_ms,
-        Some(error),
-    );
+    let retry_error = RetryError::new(kind, attempt, max_attempts, cumulative_delay_ms, error);
     if let Some(callback) = on_failure {
         callback(&retry_error);
     }
@@ -99,7 +93,7 @@ pub struct RetryError<E> {
     attempts: u8,
     max_attempts: u8,
     cumulative_delay_ms: u64,
-    cause: Option<E>,
+    cause: E,
 }
 
 impl<E> RetryError<E> {
@@ -108,7 +102,7 @@ impl<E> RetryError<E> {
         attempts: u8,
         max_attempts: u8,
         cumulative_delay_ms: u64,
-        cause: Option<E>,
+        cause: E,
     ) -> Self {
         Self {
             kind,
@@ -119,13 +113,13 @@ impl<E> RetryError<E> {
         }
     }
 
-    /// Retrieve the underlying cause when available.
-    pub const fn cause(&self) -> Option<&E> {
-        self.cause.as_ref()
+    /// The error from the final attempt.
+    pub const fn cause(&self) -> &E {
+        &self.cause
     }
 
-    /// Consume the error and return the underlying cause when available.
-    pub fn into_cause(self) -> Option<E> {
+    /// Consume the error and return the error from the final attempt.
+    pub fn into_cause(self) -> E {
         self.cause
     }
 
@@ -175,13 +169,11 @@ where
             }
         }
 
-        write!(f, " (cumulative delay {}ms)", self.cumulative_delay_ms)?;
-
-        if let Some(cause) = self.cause.as_ref() {
-            write!(f, ": {cause}")?;
-        }
-
-        Ok(())
+        write!(
+            f,
+            " (cumulative delay {}ms): {}",
+            self.cumulative_delay_ms, self.cause
+        )
     }
 }
 

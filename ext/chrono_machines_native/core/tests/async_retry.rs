@@ -202,7 +202,7 @@ async fn on_failure_reports_exhaustion() {
         .await
         .expect_err("exhausts its attempts");
 
-    assert_eq!(err.cause(), Some(&"always"));
+    assert_eq!(err.cause(), &"always");
     assert_eq!(failures.load(Ordering::SeqCst), 1);
 }
 
