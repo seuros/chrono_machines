@@ -36,15 +36,12 @@ module ChronoMachines
       attempts = 0
       DeadlineMachines.check!
 
-      begin
+      result = begin
         attempts += 1
-        result = yield
-
-        # Call success callback if defined
-        @on_success&.call(result: result, attempts: attempts)
-
-        result
+        yield
       rescue StandardError => e
+        raise if caller_gave_up?(e)
+
         delay = next_delay(attempt: attempts, exception: e)
         unless delay
           handle_final_failure(e, attempts)
@@ -53,16 +50,25 @@ module ChronoMachines
           raise e
         end
 
-        budget = DeadlineMachines.clamp_sleep(delay)
         stop_on_spent_budget(e, attempts)
+        budget = DeadlineMachines.clamp_sleep(delay)
         @on_retry&.call(exception: e, attempt: attempts, next_delay: budget)
-        robust_sleep(budget)
+        robust_sleep(DeadlineMachines.clamp_sleep(budget))
         stop_on_spent_budget(e, attempts)
         retry
       end
+
+      @on_success&.call(result: result, attempts: attempts)
+      result
     end
 
     private
+
+    # A deadline error from a narrower inner scope is a timeout worth retrying.
+    # One raised because this caller's own budget is gone is not.
+    def caller_gave_up?(error)
+      error.is_a?(DeadlineMachines::Error) && DeadlineMachines.current&.done?
+    end
 
     def stop_on_spent_budget(exception, attempts)
       return unless DeadlineMachines.current&.done?
