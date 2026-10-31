@@ -26,7 +26,7 @@ alloc = []
 async = ["alloc"]
 
 [dependencies]
-rand = { version = "0.10", default-features = false, features = ["std_rng"] }
+rand = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }

@@ -34,6 +34,7 @@ module ChronoMachines
 
     def call
       attempts = 0
+      DeadlineMachines.check!
 
       begin
         attempts += 1
@@ -52,16 +53,23 @@ module ChronoMachines
           raise e
         end
 
-        # Call retry callback if defined
-        @on_retry&.call(exception: e, attempt: attempts, next_delay: delay)
-
-        # Execute delay with robust sleep
-        robust_sleep(delay)
+        budget = DeadlineMachines.clamp_sleep(delay)
+        stop_on_spent_budget(e, attempts)
+        @on_retry&.call(exception: e, attempt: attempts, next_delay: budget)
+        robust_sleep(budget)
+        stop_on_spent_budget(e, attempts)
         retry
       end
     end
 
     private
+
+    def stop_on_spent_budget(exception, attempts)
+      return unless DeadlineMachines.current&.done?
+
+      handle_final_failure(exception, attempts)
+      DeadlineMachines.check!
+    end
 
     def retryable_exception?(exception)
       @retryable_exceptions.any? { |type| exception.is_a?(type) }

@@ -47,5 +47,6 @@ Gem::Specification.new do |spec|
   # Add native extension (only on CRuby/TruffleRuby)
   spec.extensions = ['ext/chrono_machines_native/extconf.rb'] unless RUBY_ENGINE == 'jruby'
 
+  spec.add_dependency 'deadline_machines', '>= 0.1'
   spec.add_dependency 'zeitwerk', '~> 2.7'
 end

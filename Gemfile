@@ -4,6 +4,8 @@ source 'https://rubygems.org'
 
 gemspec
 
+gem 'deadline_machines', path: '../deadline_machines'
+
 gem 'minitest', '~> 6.0'
 gem 'rake', '~> 13.0'
 gem 'zeitwerk', '~> 2.7'

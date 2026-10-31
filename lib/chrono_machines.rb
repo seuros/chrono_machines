@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'deadline_machines'
 require 'zeitwerk'
 
 loader = Zeitwerk::Loader.for_gem

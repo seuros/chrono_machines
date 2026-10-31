@@ -8,7 +8,7 @@ rust-version = "1.99"
 
 [workspace.dependencies]
 chrono-machines = { path = "ext/chrono_machines_native/core" }
-rand = { version = "0.10", default-features = false, features = ["std_rng", "sys_rng"] }
+rand = { version = "0.10", default-features = false, features = ["std_rng"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
