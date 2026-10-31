@@ -67,13 +67,25 @@ fn test_attempt_clamped_into_u8() {
 
 #[test]
 fn test_fibonacci_sequence() {
-    assert_eq!(fibonacci(0), 0);
-    assert_eq!(fibonacci(1), 1);
-    assert_eq!(fibonacci(2), 1);
-    assert_eq!(fibonacci(3), 2);
-    assert_eq!(fibonacci(4), 3);
-    assert_eq!(fibonacci(5), 5);
-    assert_eq!(fibonacci(6), 8);
-    assert_eq!(fibonacci(7), 13);
-    assert_eq!(fibonacci(8), 21);
+    assert_eq!(fibonacci(0), 0.0);
+    assert_eq!(fibonacci(1), 1.0);
+    assert_eq!(fibonacci(2), 1.0);
+    assert_eq!(fibonacci(3), 2.0);
+    assert_eq!(fibonacci(4), 3.0);
+    assert_eq!(fibonacci(5), 5.0);
+    assert_eq!(fibonacci(6), 8.0);
+    assert_eq!(fibonacci(7), 13.0);
+    assert_eq!(fibonacci(8), 21.0);
+}
+
+#[test]
+fn test_fibonacci_delay_past_the_u64_factor() {
+    const BASE: f64 = 1e-20;
+    const MAX: f64 = 1.0;
+
+    assert_eq!(
+        calculate_delay_fibonacci(94, BASE, MAX, 0.0),
+        BASE * fibonacci(94)
+    );
+    assert_eq!(calculate_delay_fibonacci(100, BASE, MAX, 0.0), MAX);
 }

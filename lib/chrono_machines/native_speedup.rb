@@ -5,14 +5,9 @@
 # to use the native Rust implementation for delay calculations.
 
 begin
-  # Try to load the native extension
-  # Prefer local development version if it exists
-  local_ext_path = File.expand_path('../../ext/chrono_machines_native/chrono_machines_native', __dir__)
-  if File.exist?("#{local_ext_path}.bundle") || File.exist?("#{local_ext_path}.so")
-    require local_ext_path
-  else
-    require 'chrono_machines_native/chrono_machines_native'
-  end
+  # `rake compile` installs the extension here. A leftover build under ext/
+  # must not shadow it: that is how a stale native backend gets tested.
+  require 'chrono_machines_native/chrono_machines_native'
 
   module ChronoMachines
     # Native speedup module that overrides backoff calculations

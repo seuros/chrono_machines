@@ -2,6 +2,8 @@
 
 module ChronoMachines
   class Executor
+    ATTEMPT_LIMIT = 255
+
     def initialize(policy_or_options = {})
       policy_options = if policy_or_options.is_a?(Symbol)
                          ChronoMachines.config.get_policy(policy_or_options)
@@ -11,6 +13,11 @@ module ChronoMachines
 
       @backoff_strategy = policy_options[:backoff_strategy] || :exponential
       @max_attempts = policy_options[:max_attempts]
+      unless @max_attempts.is_a?(Integer) && @max_attempts.between?(1, ATTEMPT_LIMIT)
+        raise ArgumentError, "max_attempts must be an Integer in 1..#{ATTEMPT_LIMIT} " \
+                             "(the native backend counts attempts in a u8); got #{@max_attempts.inspect}"
+      end
+
       @base_delay = policy_options[:base_delay]
       @multiplier = policy_options[:multiplier] || 2
       @max_delay = policy_options[:max_delay]
@@ -119,16 +126,14 @@ module ChronoMachines
       apply_jitter(base_delay)
     end
 
-    # Calculate Fibonacci number (1-indexed)
+    # The nth Fibonacci number (1-indexed), as a delay factor, accumulated step
+    # for step with `fibonacci` in ext/chrono_machines_native/core/src/backoff.rs,
+    # whose documentation covers why neither side counts in integers.
     def fibonacci(n)
-      return 0 if n.zero?
-      return 1 if n <= 2
-
-      a, b = 1, 1
-      (2...n).each do
-        a, b = b, a + b
-      end
-      b
+      previous = 0.0
+      current = 1.0
+      n.times { previous, current = current, previous + current }
+      previous
     end
 
     # Main calculate_delay dispatches to the appropriate strategy

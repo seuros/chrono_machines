@@ -282,7 +282,7 @@ Jitter is drawn from the `random:` option (Ruby's `Random` by default) on both b
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `max_attempts` | `3` | Maximum number of attempts, including the initial call |
+| `max_attempts` | `3` | Maximum number of attempts, including the initial call; `1..255` |
 | `base_delay` | `0.1` | Initial delay in seconds |
 | `multiplier` | `2` | Exponential backoff multiplier |
 | `max_delay` | `10` | Maximum delay cap in seconds |

@@ -99,6 +99,14 @@ class NextDelayTest < Minitest::Test
     assert_includes 0.0..1.0, executor.next_delay(attempt: 1)
   end
 
+  def test_rejects_more_attempts_than_a_backend_can_count
+    error = assert_raises(ArgumentError) do
+      ChronoMachines::Executor.new(max_attempts: ChronoMachines::Executor::ATTEMPT_LIMIT + 1)
+    end
+
+    assert_match(/max_attempts must be an Integer in 1\.\.255/, error.message)
+  end
+
   def test_rejects_a_random_source_without_rand
     error = assert_raises(ArgumentError) { ChronoMachines::Executor.new(random: Object.new) }
 

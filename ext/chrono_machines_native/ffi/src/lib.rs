@@ -73,14 +73,7 @@ fn calculate_delay_fibonacci(
 ) -> f64 {
     let jitter_factor = normalize_jitter(jitter_factor);
 
-    // Fibonacci numbers pass 2^53 at n = 79; from there the cast rounds to the
-    // nearest f64, an error far below anything a delay in seconds can express.
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "u64 -> f64 has no lossless conversion; rounding only starts above 2^53"
-    )]
-    let fib = fibonacci(attempt_u8(attempt)) as f64;
-    let base = (base_delay * fib).min(max_delay);
+    let base = (base_delay * fibonacci(attempt_u8(attempt))).min(max_delay);
 
     apply_jitter(base, jitter_factor)
 }

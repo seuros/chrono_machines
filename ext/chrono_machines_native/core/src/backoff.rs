@@ -25,7 +25,7 @@ fn powi_f64(base: f64, exp: i32) -> f64 {
     acc
 }
 
-/// Widen a delay (or Fibonacci factor) to `f64` for the backoff arithmetic.
+/// Widen a delay to `f64` for the backoff arithmetic.
 ///
 /// There is no lossless `u64 -> f64` conversion. Rounding only starts above
 /// 2^53 (2^53 ms is ~285,000 years), so every delay that can actually be slept
@@ -53,23 +53,25 @@ pub(crate) fn exponential_ms(
     base_exponential.min(lossy_f64(max_delay_ms))
 }
 
-/// Calculate the nth Fibonacci number (1-indexed): 1, 1, 2, 3, 5, 8, 13, ...
+/// The nth Fibonacci number (1-indexed), as a delay factor: 1, 1, 2, 3, 5, 8, ...
+///
+/// The sequence passes `2^53` at n = 79 and `u64::MAX` at n = 94, so no integer
+/// accumulator reaches the end of the `u8` attempt range. One that stops at its
+/// own ceiling scales to a delay *under* `max_delay`, which is then silently
+/// wrong rather than capped; the `f64` recurrence keeps growing and leaves the
+/// decision to the cap. It rounds from n = 82 on, within two ulps of the exact
+/// sequence over the whole range, and the gem's pure-Ruby backoff runs the same
+/// recurrence, so the two backends agree bit for bit.
 #[must_use]
-pub fn fibonacci(n: u8) -> u64 {
-    match n {
-        0 => 0,
-        1 | 2 => 1,
-        _ => {
-            let mut a = 1u64;
-            let mut b = 1u64;
-            for _ in 2..n {
-                let next = a.saturating_add(b);
-                a = b;
-                b = next;
-            }
-            b
-        }
+pub fn fibonacci(n: u8) -> f64 {
+    let mut previous = 0.0_f64;
+    let mut current = 1.0_f64;
+    for _ in 0..n {
+        let next = previous + current;
+        previous = current;
+        current = next;
     }
+    previous
 }
 
 /// Blend a base delay with jitter using the full-jitter algorithm.
@@ -448,9 +450,8 @@ impl BackoffStrategy for FibonacciBackoff {
             return None;
         }
 
-        let fib = fibonacci(attempt);
         let base =
-            (lossy_f64(self.base_delay_ms) * lossy_f64(fib)).min(lossy_f64(self.max_delay_ms));
+            (lossy_f64(self.base_delay_ms) * fibonacci(attempt)).min(lossy_f64(self.max_delay_ms));
 
         Some(apply_jitter(base, self.jitter_factor, rng))
     }
