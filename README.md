@@ -39,7 +39,7 @@ Still here? Excellent. Because in the fabric of spacetime, nobody can hear your 
 
 ### The Pattern Time Forgot
 
-Built for Ruby 3.2+ with fiber-aware sleep and full jitter implementation, because when you're manipulating time itself, precision matters.
+Built for Ruby 4.0+ with fiber-aware sleep and full jitter implementation, because when you're manipulating time itself, precision matters.
 
 ## Features
 
@@ -627,7 +627,7 @@ end
 ## Why ChronoMachines?
 
 ### Built for Modern Ruby
-- **Ruby 3.2+ Support**: Fiber-aware sleep handling
+- **Ruby 4.0+ Support**: Fiber-aware sleep handling
 - **Clean Architecture**: Separation of concerns with configurable policies
 - **Rich Instrumentation**: Comprehensive callback system for monitoring
 - **Battle-Tested**: Full jitter implementation prevents thundering herds
