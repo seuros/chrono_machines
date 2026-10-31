@@ -28,6 +28,17 @@ module ChronoMachines
   def self.retry(policy_name_or_options = {}, &)
     Executor.new(policy_name_or_options).call(&)
   end
+
+  # Full jitter over a single duration: the result lands in
+  # `seconds * (1 - factor)` to `seconds`, so a fleet of callers waiting the
+  # same nominal time does not wake up together.
+  def self.jitter(seconds, factor:, random: Random)
+    factor = Float(factor)
+    raise ArgumentError, 'factor cannot be NaN' if factor.nan?
+
+    factor = factor.clamp(0.0, 1.0)
+    seconds * (1 - factor + (random.rand * factor))
+  end
 end
 
 # Load optional async support after core is loaded
