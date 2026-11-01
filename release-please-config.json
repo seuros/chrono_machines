@@ -16,7 +16,8 @@
     },
     "ext/chrono_machines_native/ffi": {
       "release-type": "rust",
-      "package-name": "chrono_machines_native"
+      "package-name": "chrono_machines_native",
+      "bump-minor-pre-major": true
     }
   }
 }
