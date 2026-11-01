@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 chrono-machines = { workspace = true, features = ["std"] }
-magnus = "0.9"
+magnus = { version = ">= 0.9.3", default-features = false, features = ["io"] }
 rand = { workspace = true }
 rb-sys = { version = "0.9.124", default-features = false, features = ["stable-api-compiled-fallback"] }
 
