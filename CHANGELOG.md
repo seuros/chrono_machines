@@ -1,5 +1,28 @@
 ## [Unreleased]
 
+## [0.12.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.11.0...chrono_machines/v0.12.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* `chrono_machines::fibonacci` returns f64, and `max_attempts` outside 1..255 is rejected instead of silently computed on one backend only.
+
+### Features
+
+* expose full jitter as a one-shot ([ff78a9c](https://github.com/seuros/chrono_machines/commit/ff78a9ca3a9e3a3b3a64a5427290e9f72e55305a))
+* honour an ambient deadline during retries ([97b24d0](https://github.com/seuros/chrono_machines/commit/97b24d0b73751a6a25f1ee703cb251ff43ed167a))
+
+
+### Bug Fixes
+
+* a failing success callback no longer re-runs the operation ([920ecc9](https://github.com/seuros/chrono_machines/commit/920ecc9002b66a7617ed99537c63ab6b2238c1ba))
+* a lone checkout can bundle ([19276ef](https://github.com/seuros/chrono_machines/commit/19276ef6b78f0a13c18c7d23e91e2830d9cf0b1c))
+* a source install can build, and a failed gem push fails the release ([cd85f2c](https://github.com/seuros/chrono_machines/commit/cd85f2cc5270830a89b35e7217a10e2454813ab3))
+* build the native speedup on CRuby only ([0b30fc6](https://github.com/seuros/chrono_machines/commit/0b30fc61b753908a9bff39e77b8854ab74ef603f))
+* Fibonacci backoff no longer saturates on the native backend ([213413c](https://github.com/seuros/chrono_machines/commit/213413ce86af8107396d8462449e7cebd2430e17))
+* load the native build tasks on CRuby only ([f0826ca](https://github.com/seuros/chrono_machines/commit/f0826ca5e9636facde86fb02fd30d5be28b683e0))
+* ship the core's test files so the packaged crate builds ([89b1de5](https://github.com/seuros/chrono_machines/commit/89b1de5067b222de580d761ce17b439e8b689533))
+
 ## [0.11.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.10.0...chrono_machines/v0.11.0) (2026-10-14)
 
 

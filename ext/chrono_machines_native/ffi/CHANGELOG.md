@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.0](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.9.1...chrono_machines_native-v0.10.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* `chrono_machines::fibonacci` returns f64, and `max_attempts` outside 1..255 is rejected instead of silently computed on one backend only.
+
+### Bug Fixes
+
+* Fibonacci backoff no longer saturates on the native backend ([213413c](https://github.com/seuros/chrono_machines/commit/213413ce86af8107396d8462449e7cebd2430e17))
+
 ## [0.9.1](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.9.0...chrono_machines_native-v0.9.1) (2026-10-10)
 
 
