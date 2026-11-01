@@ -23,7 +23,10 @@ end
 
 GEMSPEC = Gem::Specification.load('chrono_machines.gemspec')
 
-if RUBY_ENGINE != 'jruby'
+# The extension is built on CRuby only. rb_sys is a runtime dependency, so it
+# is present on every engine, but its extension task aborts rather than raising
+# when rake-compiler is absent, and rake-compiler is in the mri group.
+if RUBY_ENGINE == 'ruby'
   begin
     require 'rb_sys/extensiontask'
   rescue LoadError
