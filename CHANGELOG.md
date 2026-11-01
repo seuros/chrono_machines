@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+## [0.12.1](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.0...chrono_machines/v0.12.1) (2026-11-01)
+
+
+### Features
+
+* pass a rubygems OTP through GEM_OTP ([c1cd1c2](https://github.com/seuros/chrono_machines/commit/c1cd1c2c306fdd00c6924e6b411934cb833a647a))
+* verify release gem checksums before pushing ([888163f](https://github.com/seuros/chrono_machines/commit/888163fcba1c2fd065319743e2743e3467b2ce12))
+
+
+### Bug Fixes
+
+* enable the rb-sys compiled fallback so new Rubies can build ([2d58288](https://github.com/seuros/chrono_machines/commit/2d5828801a84e2038bb166b44961680b59073402))
+
 ## [0.12.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.11.0...chrono_machines/v0.12.0) (2026-11-01)
 
 
