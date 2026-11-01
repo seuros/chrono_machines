@@ -4,7 +4,10 @@ source 'https://rubygems.org'
 
 gemspec
 
-gem 'deadline_machines', path: '../deadline_machines'
+# deadline_machines is not released yet; use the sibling checkout when there is
+# one, and the published gem once there is one of those.
+sibling = File.expand_path('../deadline_machines', __dir__)
+gem 'deadline_machines', path: sibling if File.directory?(sibling)
 
 gem 'minitest', '~> 6.0'
 gem 'rake', '~> 13.0'
