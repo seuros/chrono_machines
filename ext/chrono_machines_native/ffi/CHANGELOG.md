@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.10.0...chrono_machines_native-v0.10.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* enable the rb-sys compiled fallback so new Rubies can build ([2d58288](https://github.com/seuros/chrono_machines/commit/2d5828801a84e2038bb166b44961680b59073402))
+
 ## [0.10.0](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.9.1...chrono_machines_native-v0.10.0) (2026-11-01)
 
 
