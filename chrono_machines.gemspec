@@ -48,5 +48,9 @@ Gem::Specification.new do |spec|
   spec.extensions = ['ext/chrono_machines_native/extconf.rb'] unless RUBY_ENGINE == 'jruby'
 
   spec.add_dependency 'deadline_machines', '>= 0.1'
+  # A source install runs extconf.rb, which requires rb_sys/mkmf, and RubyGems
+  # clears GEM_PATH while building the extension. Without this the build only
+  # works where rb_sys happens to be installed globally.
+  spec.add_dependency 'rb_sys', '~> 0.9'
   spec.add_dependency 'zeitwerk', '~> 2.7'
 end
