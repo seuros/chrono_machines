@@ -125,6 +125,11 @@ namespace :gems do
     abort "Missing in pkg/ (run rake gems:pull_all[#{version}] first): #{missing.join(', ')}" unless missing.empty?
 
     (release_gems(version).keys - pending.keys).each { |name| puts "skip #{name}: already on rubygems.org" }
-    pending.each_key { |name| sh 'gem', 'push', File.join('pkg', name) }
+    otp = ENV.fetch('GEM_OTP', nil)
+    pending.each_key do |name|
+      command = ['gem', 'push', File.join('pkg', name)]
+      command.push('--otp', otp) unless otp.nil? || otp.empty?
+      sh(*command)
+    end
   end
 end
