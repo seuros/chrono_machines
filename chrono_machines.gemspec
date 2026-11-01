@@ -45,7 +45,9 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   # Add native extension (only on CRuby/TruffleRuby)
-  spec.extensions = ['ext/chrono_machines_native/extconf.rb'] unless RUBY_ENGINE == 'jruby'
+  # The native speedup is built on CRuby only; every other engine runs the
+  # pure-Ruby path, which is what the Rakefile's test task already assumes.
+  spec.extensions = ['ext/chrono_machines_native/extconf.rb'] if RUBY_ENGINE == 'ruby'
 
   spec.add_dependency 'deadline_machines', '>= 0.1'
   # A source install runs extconf.rb, which requires rb_sys/mkmf, and RubyGems
