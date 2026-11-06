@@ -92,6 +92,36 @@ println!("took {} attempts", outcome.attempts());
 println!("value = {}", outcome.into_inner());
 ```
 
+### Steady-State Loops (`Backoff`)
+
+The retry builder runs one operation until it succeeds. A poll loop, a
+supervised worker or a reconnect runs for as long as the process does: it
+should hold off longer while cycles keep failing and return to its own cadence
+on the first success. `Backoff` keeps that streak; the loop, the sleep and the
+stop signal stay yours.
+
+```rust
+use chrono_machines::{Backoff, ExponentialBackoff};
+
+let mut backoff = Backoff::new(
+    ExponentialBackoff::new()
+        .max_attempts(u8::MAX) // never spent
+        .base_delay_ms(1_000)
+        .max_delay_ms(30_000)
+        .jitter_factor(0.25),
+);
+
+// loop {
+//     match poll() {
+//         Ok(_) => { backoff.succeeded(); sleep_ms(interval) }
+//         Err(_) => sleep_ms(backoff.failed().unwrap_or(interval)),
+//     }
+// }
+```
+
+`failed()` returns `None` once a bounded strategy's attempts are spent;
+`failed_with_rng()` is the `no_std` entry point.
+
 ### Server-Hinted Delays (`delay_from`)
 
 When the server tells you when to come back - HTTP 429 with `Retry-After` - let the error dictate the next delay instead of guessing with backoff:

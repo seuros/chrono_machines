@@ -40,6 +40,7 @@ pub mod policy;
 #[cfg(any(feature = "std", feature = "alloc"))]
 pub mod retry;
 pub mod sleep;
+pub mod streak;
 
 /// The `rand` crate this one was built against.
 ///
@@ -89,6 +90,7 @@ pub use sleep::AsyncSleeper;
 #[cfg(feature = "std")]
 pub use sleep::StdSleeper;
 pub use sleep::{FnSleeper, Sleeper};
+pub use streak::Backoff;
 
 #[cfg(feature = "std")]
 use rand::rngs::StdRng;
