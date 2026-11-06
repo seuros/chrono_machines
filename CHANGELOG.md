@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [0.12.3](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.2...chrono_machines/v0.12.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* dedup retry builder failure path and test closures ([846ed9c](https://github.com/seuros/chrono_machines/commit/846ed9cf852a383ea4c5b341162685f243bd7c69))
+
 ## [0.12.2](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.1...chrono_machines/v0.12.2) (2026-11-06)
 
 
