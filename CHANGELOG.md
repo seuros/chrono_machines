@@ -1,5 +1,17 @@
 ## [Unreleased]
 
+## [0.12.2](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.1...chrono_machines/v0.12.2) (2026-11-06)
+
+
+### Features
+
+* Backoff tracker for loops that back off on failure and reset on success ([a415dcb](https://github.com/seuros/chrono_machines/commit/a415dcbfc4e11a038049d166fc1cfcdf60917294))
+
+
+### Bug Fixes
+
+* keep test modules out of the packaged crate ([fa18ff0](https://github.com/seuros/chrono_machines/commit/fa18ff0f9a0980d9fdcb805ae007ecff5cbac553))
+
 ## [0.12.1](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.0...chrono_machines/v0.12.1) (2026-11-01)
 
 
