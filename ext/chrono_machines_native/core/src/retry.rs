@@ -42,22 +42,6 @@ pub enum DelayHint {
     Halt,
 }
 
-/// Build a terminal [`RetryError`], firing the `on_failure` callback if present.
-fn finalize_failure<E>(
-    on_failure: Option<&mut FailureCallback<E>>,
-    kind: RetryErrorKind,
-    attempt: u8,
-    max_attempts: u8,
-    cumulative_delay_ms: u64,
-    error: E,
-) -> RetryError<E> {
-    let retry_error = RetryError::new(kind, attempt, max_attempts, cumulative_delay_ms, error);
-    if let Some(callback) = on_failure {
-        callback(&retry_error);
-    }
-    retry_error
-}
-
 /// Reason why a retry operation failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetryErrorKind {
@@ -259,17 +243,7 @@ where
     F: FnMut() -> Result<T, E>,
 {
     fn retry<B: BackoffStrategy>(self, backoff: B) -> RetryBuilder<Self, B, T, E, fn(&E) -> bool> {
-        RetryBuilder {
-            operation: self,
-            backoff,
-            when: None,
-            delay_from: None,
-            notify: None,
-            on_success: None,
-            on_failure: None,
-            _phantom_t: core::marker::PhantomData,
-            _phantom_e: core::marker::PhantomData,
-        }
+        RetryBuilder::new(self, backoff)
     }
 }
 
@@ -429,6 +403,23 @@ pub struct RetryBuilder<F, B, T, E, W> {
     _phantom_e: core::marker::PhantomData<E>,
 }
 
+impl<F, B, T, E> DefaultRetryBuilder<F, B, T, E> {
+    /// A builder with no predicate, hint hook or callbacks.
+    const fn new(operation: F, backoff: B) -> Self {
+        Self {
+            operation,
+            backoff,
+            when: None,
+            delay_from: None,
+            notify: None,
+            on_success: None,
+            on_failure: None,
+            _phantom_t: core::marker::PhantomData,
+            _phantom_e: core::marker::PhantomData,
+        }
+    }
+}
+
 /// What the retry loop should do after one attempt.
 ///
 /// Produced by [`RetryBuilder::step`], which holds every retry decision —
@@ -581,6 +572,22 @@ where
         self
     }
 
+    /// Build the terminal [`RetryError`], firing `on_failure` if present.
+    fn fail(
+        &mut self,
+        kind: RetryErrorKind,
+        attempt: u8,
+        cumulative_delay_ms: u64,
+        error: E,
+    ) -> Step<T, E> {
+        let max_attempts = self.backoff.max_attempts();
+        let retry_error = RetryError::new(kind, attempt, max_attempts, cumulative_delay_ms, error);
+        if let Some(callback) = self.on_failure.as_mut() {
+            callback(&retry_error);
+        }
+        Step::Fail(retry_error)
+    }
+
     /// Decide what happens after one attempt, firing any callbacks it implies.
     ///
     /// This is the whole retry policy. A driver's only jobs are producing the
@@ -592,8 +599,6 @@ where
         cumulative_delay_ms: u64,
         rng: &mut R,
     ) -> Step<T, E> {
-        let max_attempts = self.backoff.max_attempts();
-
         let error = match result {
             Ok(value) => {
                 if let Some(ref mut callback) = self.on_success {
@@ -615,26 +620,22 @@ where
         if let Some(ref predicate) = self.when
             && !predicate(&error)
         {
-            return Step::Fail(finalize_failure(
-                self.on_failure.as_mut(),
+            return self.fail(
                 RetryErrorKind::PredicateRejected,
                 attempt,
-                max_attempts,
                 cumulative_delay_ms,
                 error,
-            ));
+            );
         }
 
         // Out of attempts? Exhaustion wins over any delay hint.
         if !self.backoff.should_retry(attempt) {
-            return Step::Fail(finalize_failure(
-                self.on_failure.as_mut(),
+            return self.fail(
                 RetryErrorKind::Exhausted,
                 attempt,
-                max_attempts,
                 cumulative_delay_ms,
                 error,
-            ));
+            );
         }
 
         let hint = self
@@ -646,14 +647,12 @@ where
             DelayHint::Backoff => {
                 // The strategy may still decline to produce a delay.
                 let Some(delay_ms) = self.backoff.delay(attempt, rng) else {
-                    return Step::Fail(finalize_failure(
-                        self.on_failure.as_mut(),
+                    return self.fail(
                         RetryErrorKind::Exhausted,
                         attempt,
-                        max_attempts,
                         cumulative_delay_ms,
                         error,
-                    ));
+                    );
                 };
                 delay_ms
             }
@@ -663,26 +662,22 @@ where
                     .max_delay_ms()
                     .is_some_and(|cap| delay_ms > cap)
                 {
-                    return Step::Fail(finalize_failure(
-                        self.on_failure.as_mut(),
+                    return self.fail(
                         RetryErrorKind::HintHalted,
                         attempt,
-                        max_attempts,
                         cumulative_delay_ms,
                         error,
-                    ));
+                    );
                 }
                 delay_ms
             }
             DelayHint::Halt => {
-                return Step::Fail(finalize_failure(
-                    self.on_failure.as_mut(),
+                return self.fail(
                     RetryErrorKind::HintHalted,
                     attempt,
-                    max_attempts,
                     cumulative_delay_ms,
                     error,
-                ));
+                );
             }
         };
 
@@ -869,17 +864,7 @@ where
         self,
         backoff: B,
     ) -> RetryBuilder<Self, B, T, E, fn(&E) -> bool> {
-        RetryBuilder {
-            operation: self,
-            backoff,
-            when: None,
-            delay_from: None,
-            notify: None,
-            on_success: None,
-            on_failure: None,
-            _phantom_t: core::marker::PhantomData,
-            _phantom_e: core::marker::PhantomData,
-        }
+        RetryBuilder::new(self, backoff)
     }
 }
 

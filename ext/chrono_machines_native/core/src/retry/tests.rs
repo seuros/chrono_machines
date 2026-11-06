@@ -3,6 +3,8 @@
     reason = "fixtures must have the `FnMut() -> Result<T, E>` shape `.retry()` accepts"
 )]
 
+use core::cell::Cell;
+
 use super::*;
 use crate::backoff::{ConstantBackoff, ExponentialBackoff};
 use crate::sleep::FnSleeper;
@@ -11,6 +13,23 @@ use crate::sleep::FnSleeper;
 enum TestError {
     Retryable,
     Fatal,
+}
+
+/// An operation that fails with `Retryable` `failures` times, then yields `value`.
+fn flaky<T: Copy + 'static>(
+    attempts: &Cell<i32>,
+    failures: i32,
+    value: T,
+) -> impl FnMut() -> Result<T, TestError> + '_ {
+    move || {
+        let current = attempts.get();
+        attempts.set(current + 1);
+        if current < failures {
+            Err(TestError::Retryable)
+        } else {
+            Ok(value)
+        }
+    }
 }
 
 #[test]
@@ -30,20 +49,9 @@ fn test_retry_success_on_first_attempt() {
 
 #[test]
 fn test_retry_success_after_failures() {
-    use core::cell::Cell;
-
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 2, 42);
 
     let result = operation
         .retry(ExponentialBackoff::default().max_attempts(3))
@@ -92,22 +100,13 @@ fn test_retry_when_predicate() {
 
 #[test]
 fn test_delay_from_hint_used_verbatim() {
-    use core::cell::Cell;
     use std::sync::{Arc, Mutex};
 
     let attempts = Cell::new(0);
     let delays = Arc::new(Mutex::new(Vec::new()));
     let delays_clone = Arc::clone(&delays);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 2, 42);
 
     let result = operation
         .retry(ExponentialBackoff::default().max_attempts(5))
@@ -126,22 +125,13 @@ fn test_delay_from_hint_used_verbatim() {
 
 #[test]
 fn test_delay_from_backoff_falls_through_to_strategy() {
-    use core::cell::Cell;
     use std::sync::{Arc, Mutex};
 
     let attempts = Cell::new(0);
     let delays = Arc::new(Mutex::new(Vec::new()));
     let delays_clone = Arc::clone(&delays);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-        if current < 1 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(7)
-        }
-    };
+    let operation = flaky(&attempts, 1, 7);
 
     let result = operation
         .retry(ConstantBackoff::new().delay_ms(250).max_attempts(3))
@@ -158,8 +148,6 @@ fn test_delay_from_backoff_falls_through_to_strategy() {
 
 #[test]
 fn test_delay_from_halt_stops_retrying() {
-    use core::cell::Cell;
-
     let attempts = Cell::new(0);
 
     let operation = || {
@@ -200,8 +188,6 @@ fn test_delay_from_hint_beyond_max_delay_halts() {
 
 #[test]
 fn test_delay_from_exhaustion_wins_over_hint() {
-    use core::cell::Cell;
-
     let attempts = Cell::new(0);
 
     let operation = || {
@@ -222,7 +208,6 @@ fn test_delay_from_exhaustion_wins_over_hint() {
 
 #[test]
 fn test_retry_notify_callback() {
-    use core::cell::Cell;
     #[cfg(feature = "std")]
     use std::sync::{Arc, Mutex};
 
@@ -233,16 +218,7 @@ fn test_retry_notify_callback() {
     let notify_calls = Arc::new(Mutex::new(Vec::new()));
     let notify_calls_clone = Arc::clone(&notify_calls);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 2, 42);
 
     let result = operation
         .retry(ExponentialBackoff::default().max_attempts(3))
@@ -272,7 +248,6 @@ fn test_retry_notify_callback() {
 
 #[test]
 fn test_on_success_callback_invoked() {
-    use core::cell::Cell;
     use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
     static SUCCESS_ATTEMPT: AtomicUsize = AtomicUsize::new(0);
@@ -280,16 +255,7 @@ fn test_on_success_callback_invoked() {
 
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 1 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(7)
-        }
-    };
+    let operation = flaky(&attempts, 1, 7);
 
     SUCCESS_ATTEMPT.store(0, Ordering::SeqCst);
     SUCCESS_CUMULATIVE_DELAY.store(0, Ordering::SeqCst);
@@ -357,20 +323,9 @@ fn test_on_failure_callback_invoked() {
 
 #[test]
 fn test_constant_backoff_retry() {
-    use core::cell::Cell;
-
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 1 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 1, 42);
 
     let result = operation
         .retry(ConstantBackoff::new().delay_ms(10).max_attempts(2))
@@ -385,20 +340,9 @@ fn test_constant_backoff_retry() {
 #[cfg(feature = "std")]
 #[test]
 fn test_retry_with_std_sleeper() {
-    use core::cell::Cell;
-
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 1 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 1, 42);
 
     let start = std::time::Instant::now();
     let result = operation
@@ -420,7 +364,6 @@ fn test_retry_with_std_sleeper() {
 
 #[test]
 fn test_retry_context_comprehensive() {
-    use core::cell::Cell;
     #[cfg(feature = "std")]
     use std::sync::{Arc, Mutex};
 
@@ -431,16 +374,7 @@ fn test_retry_context_comprehensive() {
     let notify_contexts = Arc::new(Mutex::new(Vec::new()));
     let notify_contexts_clone = Arc::clone(&notify_contexts);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 3 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 3, 42);
 
     let result = operation
         .retry(
@@ -490,7 +424,6 @@ fn test_retry_context_comprehensive() {
 
 #[test]
 fn test_retry_context_on_success() {
-    use core::cell::Cell;
     #[cfg(feature = "std")]
     use std::sync::{Arc, Mutex};
 
@@ -501,16 +434,7 @@ fn test_retry_context_on_success() {
     let success_context = Arc::new(Mutex::new(None));
     let success_context_clone = Arc::clone(&success_context);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(100)
-        }
-    };
+    let operation = flaky(&attempts, 2, 100);
 
     let result = operation
         .retry(
@@ -544,7 +468,6 @@ fn test_retry_context_on_success() {
 
 #[test]
 fn test_retry_context_cumulative_accuracy() {
-    use core::cell::Cell;
     #[cfg(feature = "std")]
     use std::sync::{Arc, Mutex};
 
@@ -608,20 +531,10 @@ fn test_with_exponential_success() {
 #[test]
 fn test_with_exponential_retry_behavior() {
     use super::RetryableExt;
-    use core::cell::Cell;
 
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(100)
-        }
-    };
+    let operation = flaky(&attempts, 2, 100);
 
     let result = operation
         .with_exponential()
@@ -655,20 +568,10 @@ fn test_with_exponential_exhausted() {
 #[test]
 fn test_with_exponential_chaining() {
     use super::RetryableExt;
-    use core::cell::Cell;
 
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 1 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(7)
-        }
-    };
+    let operation = flaky(&attempts, 1, 7);
 
     // Test that .with_exponential() can be chained with other builder methods
     let result = operation
@@ -701,7 +604,6 @@ fn test_with_constant_success() {
 #[test]
 fn test_with_constant_uses_correct_delay() {
     use super::RetryableExt;
-    use core::cell::Cell;
     #[cfg(feature = "std")]
     use std::sync::{Arc, Mutex};
 
@@ -712,16 +614,7 @@ fn test_with_constant_uses_correct_delay() {
     let delays = Arc::new(Mutex::new(Vec::new()));
     let delays_clone = Arc::clone(&delays);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(42)
-        }
-    };
+    let operation = flaky(&attempts, 2, 42);
 
     let result = operation
         .with_constant(500)
@@ -745,7 +638,6 @@ fn test_with_constant_uses_correct_delay() {
 #[test]
 fn test_with_constant_chaining() {
     use super::RetryableExt;
-    use core::cell::Cell;
 
     let attempts = Cell::new(0);
 
@@ -792,20 +684,10 @@ fn test_with_fibonacci_success() {
 #[test]
 fn test_with_fibonacci_retry_behavior() {
     use super::RetryableExt;
-    use core::cell::Cell;
 
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 3 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(777)
-        }
-    };
+    let operation = flaky(&attempts, 3, 777);
 
     let result = operation
         .with_fibonacci()
@@ -837,22 +719,12 @@ fn test_with_fibonacci_exhausted() {
 #[test]
 fn test_with_fibonacci_chaining() {
     use super::RetryableExt;
-    use core::cell::Cell;
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     static SUCCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 2 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(555)
-        }
-    };
+    let operation = flaky(&attempts, 2, 555);
 
     SUCCESS_COUNT.store(0, Ordering::SeqCst);
 
@@ -873,7 +745,6 @@ fn test_with_fibonacci_chaining() {
 #[test]
 fn test_all_extension_methods_produce_working_retries() {
     use super::RetryableExt;
-    use core::cell::Cell;
 
     let attempts_exp = Cell::new(0);
     let op_exp = || {
@@ -933,20 +804,10 @@ fn test_all_extension_methods_produce_working_retries() {
 #[test]
 fn test_with_exponential_std_sleeper() {
     use super::RetryableExt;
-    use core::cell::Cell;
 
     let attempts = Cell::new(0);
 
-    let operation = || {
-        let current = attempts.get();
-        attempts.set(current + 1);
-
-        if current < 1 {
-            Err(TestError::Retryable)
-        } else {
-            Ok(999)
-        }
-    };
+    let operation = flaky(&attempts, 1, 999);
 
     // Test with std sleeper
     let result = operation.with_exponential().call();
