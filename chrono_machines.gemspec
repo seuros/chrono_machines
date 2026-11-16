@@ -31,6 +31,6 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
   spec.extensions = ['ext/chrono_machines_native/extconf.rb']
 
-  spec.add_dependency 'deadline_machines', '>= 0.1'
+  spec.add_dependency 'deadline_machines', '>= 0.2.0'
   spec.add_dependency 'rb_sys', '~> 0.9', '>= 0.9.130'
 end

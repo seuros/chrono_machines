@@ -1,5 +1,6 @@
 //! Private native entry point.
 use magnus::{Error, Ruby, function, method, prelude::*};
+use matryona_machines::ruby::Class;
 
 use crate::retry::Retry;
 use crate::shapes;
@@ -27,5 +28,6 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     class.define_method("failed", method!(Retry::failed, 1))?;
     class.define_method("hinted", method!(Retry::hinted, 1))?;
     class.define_method("succeeded", method!(Retry::succeeded, 0))?;
-    Ok(())
+    // Fix magnus' class for Retry now, so building one runs no Ruby.
+    Class::pin_wrapped::<Retry>(ruby, class).map(drop)
 }

@@ -10,7 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 chrono-machines = { path = "ext/chrono_machines_native/core" }
-matryona-machines = { version = ">=0.5", default-features = false }
+matryona-machines = { version = ">=0.6", default-features = false }
 magnus = { version = "0.9.3", default-features = false }
 rb-sys = { version = "0.9.130", default-features = false, features = ["stable-api-compiled-fallback"] }
 
