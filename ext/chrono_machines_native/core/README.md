@@ -9,7 +9,7 @@ the same type drives a blocking loop, an async task or a bare-metal timer.
 
 ```toml
 [dependencies]
-chrono-machines = "0.11.1" # x-release-please-version
+chrono-machines = "0.12.0" # x-release-please-version
 ```
 
 ## Shapes

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.0](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.11.1...chrono-machines-v0.12.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* rebuild on Data shapes, a native Retry streak and nanosecond spans
+
+### Features
+
+* rebuild on Data shapes, a native Retry streak and nanosecond spans ([1301183](https://github.com/seuros/chrono_machines/commit/1301183c52c03c6ae77a0eb96f6fdbd24bf97474))
+
 ## [0.11.1](https://github.com/seuros/chrono_machines/compare/chrono-machines-v0.11.0...chrono-machines-v0.11.1) (2026-11-06)
 
 

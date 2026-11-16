@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [0.13.0](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.3...chrono_machines/v0.13.0) (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* rebuild on Data shapes, a native Retry streak and nanosecond spans
+
+### Features
+
+* rebuild on Data shapes, a native Retry streak and nanosecond spans ([1301183](https://github.com/seuros/chrono_machines/commit/1301183c52c03c6ae77a0eb96f6fdbd24bf97474))
+
+
+### Bug Fixes
+
+* require deadline_machines 0.2.0 and fix Retry's class at load ([761e409](https://github.com/seuros/chrono_machines/commit/761e409a28b103b81f9b47d836d1ff8b60cb8af2))
+
 ## [0.12.3](https://github.com/seuros/chrono_machines/compare/chrono_machines/v0.12.2...chrono_machines/v0.12.3) (2026-11-06)
 
 
