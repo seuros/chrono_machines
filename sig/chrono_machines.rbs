@@ -1,4 +1,124 @@
 module ChronoMachines
   VERSION: String
-  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+
+  # Every span is Integer nanoseconds; arguments are in 0..2**64-1. A draw is
+  # an Integer uniform over 0...2**64 that jitter consumes; an attempt is the
+  # failure number, 1..255.
+  #
+  # Every Data value validates when built, by the gem or by hand: TypeError
+  # for the wrong type, RangeError for a value the core rejects.
+
+  # Refusals: the call was not honoured and changed nothing.
+  type refusal = :exhausted | :beyond_cap
+
+  type strategy = Exponential | Constant | Fibonacci
+
+  # base * multiplier**(n - 1), capped at max; base <= max, a finite
+  # multiplier >= 1.0, a jitter in 0.0..1.0. The reals are stored as Floats.
+  class Exponential < Data
+    attr_reader base: Integer
+    attr_reader multiplier: Float
+    attr_reader max: Integer
+    attr_reader jitter: Float
+    def self.new: (Integer base, Float | Integer multiplier, Integer max, Float | Integer jitter) -> Exponential
+                | (base: Integer, multiplier: Float | Integer, max: Integer, jitter: Float | Integer) -> Exponential
+    # The hold-off after failure number +attempt+, jittered by +draw+.
+    def delay: (Integer attempt, Integer draw) -> Integer
+    # The longest delay: max.
+    def cap: () -> Integer
+  end
+
+  # The same span after every failure; no cap.
+  class Constant < Data
+    attr_reader span: Integer
+    attr_reader jitter: Float
+    def self.new: (Integer span, Float | Integer jitter) -> Constant
+                | (span: Integer, jitter: Float | Integer) -> Constant
+    def delay: (Integer attempt, Integer draw) -> Integer
+    def cap: () -> nil
+  end
+
+  # base * fib(n), capped at max; base <= max.
+  class Fibonacci < Data
+    attr_reader base: Integer
+    attr_reader max: Integer
+    attr_reader jitter: Float
+    def self.new: (Integer base, Integer max, Float | Integer jitter) -> Fibonacci
+                | (base: Integer, max: Integer, jitter: Float | Integer) -> Fibonacci
+    def delay: (Integer attempt, Integer draw) -> Integer
+    def cap: () -> Integer
+  end
+
+  # Consecutive failures against an attempt budget that counts the first try
+  # (1..255, or nil for unbounded). Mutating calls check frozen first.
+  class Retry
+    def self.new: (strategy strategy, Integer? max_attempts) -> Retry
+    def strategy: () -> strategy
+    def max_attempts: () -> Integer?
+    # Honoured failures since the start or the last success (at most 255).
+    def failures: () -> Integer
+    # The hold-offs answered since then, summed.
+    def waited: () -> Integer
+    # The hold-off before the next attempt, or :exhausted.
+    def failed: (Integer draw) -> (Integer | :exhausted)
+    # The hint back, or :exhausted / :beyond_cap (past the strategy's cap).
+    def hinted: (Integer delay) -> (Integer | :exhausted | :beyond_cap)
+    # Ends the streak.
+    def succeeded: () -> nil
+  end
+
+  type delay_hint = Integer | :halt | nil
+
+  interface _Random
+    def rand: (Integer limit) -> Integer
+  end
+
+  # A blocking retry runtime over Retry. The keywords are runtime-only.
+  class Executor
+    attr_reader strategy: strategy
+    attr_reader max_attempts: Integer?
+    def initialize: (strategy strategy, Integer? max_attempts,
+                     ?retryable: Array[Class],
+                     ?delay_from: (^(exception: StandardError, attempt: Integer) -> delay_hint)?,
+                     ?on_retry: (^(exception: StandardError, attempt: Integer, next_delay: Integer) -> void)?,
+                     ?on_success: (^(result: untyped, attempts: Integer) -> void)?,
+                     ?on_failure: (^(exception: StandardError, attempts: Integer) -> void)?,
+                     ?random: _Random) -> void
+    def call: [T] () { () -> T } -> T
+
+    private
+
+    def exception_classes: (Array[Class] classes) -> Array[Class]
+    # The hook itself, nil or anything answering call.
+    def callable: [H] (H hook, String name) -> H
+    def retryable?: (StandardError error) -> bool
+    # The hold-off before the next attempt, or why there is none.
+    def hold_off: (Retry streak, StandardError error, Integer attempt) -> (Integer | :exhausted | :beyond_cap | :halt)
+    def wait: (Integer delay, StandardError error, Integer attempt) -> void
+    # nil when there is no ambient budget.
+    def caller_gave_up?: (StandardError error) -> bool?
+    def stop_on_spent_budget: (StandardError error, Integer attempt) -> void
+    def give_up: (StandardError error, Integer attempt) -> void
+  end
+
+  # Native validators behind the Data values above
+  # (ext/chrono_machines_native/ffi/src/shapes.rs): TypeError or RangeError
+  # for what the core rejects, else the reals as the Floats the value stores.
+  # [multiplier, jitter]
+  private def self.__exponential: (Integer base, Float | Integer multiplier, Integer max, Float | Integer jitter) -> [Float, Float]
+  # The jitter.
+  private def self.__constant: (Integer span, Float | Integer jitter) -> Float
+  # The jitter.
+  private def self.__fibonacci: (Integer base, Integer max, Float | Integer jitter) -> Float
+
+  def self.retry: [T] (strategy strategy, Integer? max_attempts, **untyped runtime) { () -> T } -> T
+
+  class Error < StandardError
+  end
+
+  class MaxRetriesExceededError < Error
+    attr_reader original_exception: StandardError
+    attr_reader attempts: Integer
+    def initialize: (StandardError original_exception, Integer attempts) -> void
+  end
 end

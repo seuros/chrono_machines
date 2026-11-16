@@ -2,29 +2,22 @@
 
 > The temporal manipulation engine that rewrites the rules of retry!
 
-A sophisticated Ruby implementation of exponential backoff and retry mechanisms, built for temporal precision in distributed systems where time itself is your greatest ally.
+Backoff timing for Ruby over a native Rust core: exponential, constant and
+Fibonacci shapes with full jitter, a failure-streak counter that refuses once
+the attempt budget is spent, and a blocking retry runtime that honours
+`deadline_machines` budgets. Every span is Integer nanoseconds.
 
 ## Quick Start
 
-```bash
+```ruby
 gem 'chrono_machines'
 ```
 
 ```ruby
-class PaymentService
-  include ChronoMachines::DSL
+MS = 1_000_000
+BACKOFF = ChronoMachines::Exponential.new(100 * MS, 2.0, 10_000 * MS, 1.0)
 
-  chrono_policy :stripe_payment, max_attempts: 5, base_delay: 0.1, multiplier: 2
-
-  def charge(amount)
-    with_chrono_policy(:stripe_payment) do
-      Stripe::Charge.create(amount: amount)
-    end
-  end
-end
-
-# Or use it directly
-result = ChronoMachines.retry(max_attempts: 3) do
+result = ChronoMachines.retry(BACKOFF, 5, retryable: [Timeout::Error]) do
   perform_risky_operation
 end
 ```
@@ -39,19 +32,9 @@ Still here? Excellent. Because in the fabric of spacetime, nobody can hear your 
 
 ### The Pattern Time Forgot
 
-Built for Ruby 4.0+ with fiber-aware sleep and full jitter implementation, because when you're manipulating time itself, precision matters.
-
-## Features
-
-- **Temporal Precision** - Full jitter exponential backoff with microsecond accuracy
-- **Advanced Retry Logic** - Configurable retryable exceptions and intelligent failure handling
-- **Rich Instrumentation** - Success, retry, and failure callbacks with contextual data
-- **Fallback Mechanisms** - Execute alternative logic when all retries are exhausted
-- **Declarative DSL** - Clean policy definitions with builder patterns
-- **Fiber-Safe Operations** - Async-aware sleep handling for modern Ruby
-- **Custom Exceptions** - MaxRetriesExceededError with original exception context
-- **Policy Management** - Named retry policies with inheritance and overrides
-- **Robust Error Handling** - Interrupt-preserving sleep with graceful degradation
+Built for Ruby 4.0+ on a `no_std` Rust core that reads no clock and owns no
+random generator, because when you're manipulating time itself, precision
+matters. The core decides; you sleep.
 
 ## The Temporal Manifesto
 
@@ -60,583 +43,119 @@ Built for Ruby 4.0+ with fiber-aware sleep and full jitter implementation, becau
 
 When your payment service fails, you don't want to hammer it into submission. You want to approach it like a time traveler—carefully, with exponential patience, and a healthy respect for the butterfly effect.
 
-## Core Usage Patterns
+## Shapes
 
-### Direct Retry with Options
+Each shape is a frozen `Data` value, validated by the core when built (by the
+gem or by hand): `TypeError` for the wrong type, `RangeError` for a shape no
+delay can come from. Spans are Integer nanoseconds in `0..2**64-1`; the reals
+are stored as Floats.
 
-```ruby
-# Simple retry with exponential backoff
-result = ChronoMachines.retry(max_attempts: 3, base_delay: 0.1) do
-  fetch_external_data
-end
+| Shape | Delay after failure `n`, before jitter |
+|-------|----------------------------------------|
+| `Exponential.new(base, multiplier, max, jitter)` | `base * multiplier**(n - 1)`, capped at `max` (`base <= max`, finite `multiplier >= 1.0`) |
+| `Constant.new(span, jitter)` | `span`, with no cap |
+| `Fibonacci.new(base, max, jitter)` | `base * fib(n)` (1, 1, 2, 3, 5, ...), capped at `max` (`base <= max`) |
 
-# Advanced configuration
-result = ChronoMachines.retry(
-  max_attempts: 5,
-  base_delay: 0.2,
-  multiplier: 3,
-  max_delay: 30,
-  retryable_exceptions: [Net::TimeoutError, HTTPError],
-  on_retry: ->(exception:, attempt:, next_delay:) {
-    Rails.logger.warn "Retry #{attempt}: #{exception.message}, waiting #{next_delay}s"
-  },
-  on_failure: ->(exception:, attempts:) {
-    Metrics.increment('api.retry.exhausted', tags: ["attempts:#{attempts}"])
-  }
-) do
-  external_api_call
-end
-```
-
-### Policy-Based Configuration
+`shape.delay(attempt, draw)` answers the hold-off after failure number
+`attempt` (1..255); `shape.cap` answers the cap, or nil for a `Constant`.
 
 ```ruby
-# Configure global policies
-ChronoMachines.configure do |config|
-  config.define_policy(:aggressive, max_attempts: 10, base_delay: 0.01, multiplier: 1.5)
-  config.define_policy(:conservative, max_attempts: 3, base_delay: 1.0, multiplier: 2)
-  config.define_policy(:database, max_attempts: 5, retryable_exceptions: [ActiveRecord::ConnectionError])
-end
-
-# Use named policies
-result = ChronoMachines.retry(:database) do
-  User.find(user_id)
-end
+fib = ChronoMachines::Fibonacci.new(100 * MS, 5_000 * MS, 0.5)
+fib.delay(5, 0)        # => 500_000_000, a zero draw is the undithered delay
+fib.delay(5, 2**63)    # => 375_000_000
+fib.delay(5, Random.rand(2**64))
 ```
-
-### DSL Integration
-
-```ruby
-class ApiClient
-  include ChronoMachines::DSL
-
-  # Define policies at class level
-  chrono_policy :standard_api, max_attempts: 5, base_delay: 0.1, multiplier: 2
-  chrono_policy :critical_api, max_attempts: 10, base_delay: 0.05, max_delay: 5
-
-  def fetch_user_data(id)
-    with_chrono_policy(:standard_api) do
-      api_request("/users/#{id}")
-    end
-  end
-
-  def emergency_shutdown
-    # Use inline options for one-off scenarios
-    with_chrono_policy(max_attempts: 1, base_delay: 0) do
-      shutdown_api_call
-    end
-  end
-end
-```
-
-## Advanced Temporal Mechanics
-
-### Callback Instrumentation
-
-```ruby
-# Monitor retry patterns
-policy_options = {
-  max_attempts: 5,
-  on_success: ->(result:, attempts:) {
-    Metrics.histogram('operation.attempts', attempts)
-    Rails.logger.info "Operation succeeded after #{attempts} attempts"
-  },
-
-  on_retry: ->(exception:, attempt:, next_delay:) {
-    Metrics.increment('operation.retry', tags: ["attempt:#{attempt}"])
-    Honeybadger.notify(exception, context: { attempt: attempt, next_delay: next_delay })
-  },
-
-  on_failure: ->(exception:, attempts:) {
-    Metrics.increment('operation.failure', tags: ["final_attempts:#{attempts}"])
-    PagerDuty.trigger("Operation failed after #{attempts} attempts: #{exception.message}")
-  }
-}
-
-ChronoMachines.retry(policy_options) do
-  critical_operation
-end
-```
-
-### Exception Handling
-
-```ruby
-begin
-  ChronoMachines.retry(max_attempts: 3) do
-    risky_operation
-  end
-rescue ChronoMachines::MaxRetriesExceededError => e
-  # Access the original exception and retry context
-  Rails.logger.error "Failed after #{e.attempts} attempts: #{e.original_exception.message}"
-
-  # The original exception is preserved
-  case e.original_exception
-  when Net::TimeoutError
-    handle_timeout_failure
-  when HTTPError
-    handle_http_failure
-  end
-end
-```
-
-### Fallback Mechanisms
-
-```ruby
-# Execute fallback logic when retries are exhausted
-ChronoMachines.retry(
-  max_attempts: 3,
-  on_failure: ->(exception:, attempts:) {
-    # Fallback doesn't throw - original exception is still raised
-    Rails.cache.write("fallback_data_#{user_id}", cached_response, expires_in: 5.minutes)
-    SlackNotifier.notify("API down, serving cached data for user #{user_id}")
-  }
-) do
-  fetch_fresh_user_data
-end
-```
-
-### Server-Hinted Delays (`delay_from`)
-
-When the server tells you when to come back - HTTP 429 with `Retry-After` - guessing with exponential backoff is rude. `delay_from` lets the exception dictate the next delay:
-
-```ruby
-ChronoMachines.retry(
-  max_attempts: 5,
-  max_delay: 30,
-  retryable_exceptions: [MyClient::RateLimitError],
-  delay_from: ->(exception:, attempt:) {
-    exception.respond_to?(:retry_after) ? exception.retry_after : nil
-  }
-) do
-  call_rate_limited_api
-end
-```
-
-The hook's return value controls the retry:
-
-- `nil` - no hint; fall back to the policy's backoff strategy
-- `Numeric` - sleep exactly that many seconds (no jitter: the server picked the time, honor it)
-- a `Numeric` **beyond `max_delay`** - halt: the server asked for more patience than this policy allows, so the original exception propagates and the caller decides (background job, `Retry-After` response header, ...)
-- `:halt` or `false` - stop retrying immediately, propagate the original exception
-
-Anything else raises `ArgumentError` - a broken hook fails loudly instead of silently mangling your retry cadence.
-
-### Scheduling retries without sleeping
-
-See the [Rails integration guide](docs/RAILS_INTEGRATION.md) for Active Job patterns, policy callbacks, and safe retries.
-
-`Executor#next_delay(attempt:, exception: nil)` returns seconds to wait, or `nil` to stop. `attempt: 1` means the initial call has failed; `max_attempts` includes that initial call. It uses the same backoff, jitter, exception rules, and `delay_from` hints as `call`, without executing work, sleeping, or running lifecycle callbacks. The caller owns the attempt count and scheduling. Without an exception, `delay_from` and exception filtering are skipped.
-
-For Active Job's `retry_on`, keep the attempt limit in sync with the policy:
-
-```ruby
-class FetchJob < ApplicationJob
-  RETRY_POLICY = ChronoMachines::Executor.new(max_attempts: 5, base_delay: 1)
-
-  retry_on IOError, attempts: 5,
-           wait: ->(executions) { RETRY_POLICY.next_delay(attempt: executions) }
-end
-```
-
-`retry_on` calls `wait` only while `executions < attempts`. If the two limits drift apart, `next_delay` returns `nil` and Active Job retries immediately, so keep `attempts:` equal to `max_attempts`.
-
-To use exception hints with durable jobs, pass the attempt count to the next job:
-
-```ruby
-def perform(record_id, attempt: 1)
-  fetch_record(record_id)
-rescue IOError => error
-  delay = RETRY_POLICY.next_delay(attempt: attempt, exception: error)
-  raise unless delay
-
-  self.class.set(wait_until: Time.current + delay)
-      .perform_later(record_id, attempt: attempt + 1)
-end
-```
-
-A hint beyond `max_delay` returns `nil`; it is never shortened to the cap. Use `random: Random.new(seed)` for deterministic jitter in tests, with either the Ruby or native backend.
 
 ## The Science of Temporal Jitter
 
-ChronoMachines implements **full jitter** exponential backoff:
+`jitter` is the share of a delay a draw may take off: with a draw `d` uniform
+over `0...2**64`, the delay is `capped - capped * jitter * d / 2**64`, so it
+lies in `capped * (1 - jitter)..capped`. `1.0` is full jitter, `0.0` none.
 
 ```ruby
 # Instead of predictable delays that create thundering herds:
-# Attempt 1: 100ms
-# Attempt 2: 200ms
-# Attempt 3: 400ms
-
-# ChronoMachines uses full jitter:
-# Attempt 1: random(0, 100ms)
-# Attempt 2: random(0, 200ms)
-# Attempt 3: random(0, 400ms)
+#   100ms, 200ms, 400ms
+# full jitter spreads every caller over:
+#   0..100ms, 0..200ms, 0..400ms
 ```
 
-This prevents the "thundering herd" problem where multiple clients retry simultaneously, overwhelming recovering services.
+The core never draws for you. Pass `Random.rand(2**64)`, a seeded `Random`
+in tests, or `0` when you want the cap of the range.
 
-Jitter is drawn from the `random:` option (Ruby's `Random` by default) on both backends; the native extension computes only the un-jittered base delay.
+## Retry
 
-## Configuration Reference
-
-### Policy Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `max_attempts` | `3` | Maximum number of attempts, including the initial call; `1..255` |
-| `base_delay` | `0.1` | Initial delay in seconds |
-| `multiplier` | `2` | Exponential backoff multiplier |
-| `max_delay` | `10` | Maximum delay cap in seconds |
-| `random` | `Random` | Random source for jitter; accepts `Random.new(seed)` |
-| `retryable_exceptions` | `[StandardError]` | Array of exception classes to retry |
-| `on_success` | `nil` | Success callback: `(result:, attempts:)` |
-| `on_retry` | `nil` | Retry callback: `(exception:, attempt:, next_delay:)` |
-| `on_failure` | `nil` | Failure callback: `(exception:, attempts:)` |
-
-### DSL Methods
-
-| Method | Scope | Description |
-|--------|-------|-------------|
-| `chrono_policy(name, options)` | Class | Define a named retry policy |
-| `with_chrono_policy(policy_or_options, &block)` | Instance | Execute block with retry policy |
-
-## Real-World Examples
-
-### Database Connection Resilience
+`ChronoMachines::Retry.new(strategy, max_attempts)` counts consecutive
+failures against a budget that includes the first try (`1..255`, or nil for
+unbounded). Refusals are symbols and change nothing.
 
 ```ruby
-class DatabaseService
-  include ChronoMachines::DSL
-
-  chrono_policy :db_connection,
-    max_attempts: 5,
-    base_delay: 0.1,
-    retryable_exceptions: [
-      ActiveRecord::ConnectionTimeoutError,
-      ActiveRecord::DisconnectedError,
-      PG::ConnectionBad
-    ],
-    on_retry: ->(exception:, attempt:, next_delay:) {
-      Rails.logger.warn "DB retry #{attempt}: #{exception.class}"
-    }
-
-  def find_user(id)
-    with_chrono_policy(:db_connection) do
-      User.find(id)
-    end
-  end
-end
+streak = ChronoMachines::Retry.new(BACKOFF, 3)
+streak.failed(Random.rand(2**64))  # => Integer nanoseconds to wait
+streak.hinted(2_000 * MS)          # => 2_000_000_000, a Retry-After taken verbatim
+streak.failed(0)                   # => :exhausted, the third attempt was the last
+streak.failures                    # => 2
+streak.waited                      # => nanoseconds answered so far
+streak.succeeded                   # the streak ends; the next failure is the first again
 ```
 
-### HTTP API Integration
+`hinted` answers `:beyond_cap` for a hint longer than the shape's cap: the
+failure asks for more patience than the policy allows. Exhaustion wins over
+any hint. Mutating calls check frozen first (`FrozenError`), then their
+arguments (`TypeError`/`RangeError`), before the core is asked.
+
+## The Executor
+
+`ChronoMachines::Executor.new(strategy, max_attempts, **runtime)` and
+`ChronoMachines.retry(strategy, max_attempts, **runtime) { ... }` run a block
+under a fresh `Retry`, sleeping each hold-off. The keywords belong to this
+pure-Ruby runtime, not the core:
+
+| Keyword | Default | Meaning |
+|---------|---------|---------|
+| `retryable:` | `[StandardError]` | exception classes worth retrying; anything else is re-raised at once |
+| `delay_from:` | nil | `->(exception:, attempt:)`: nil keeps the shape, Integer nanoseconds replace its delay, `:halt` gives up |
+| `on_retry:` | nil | `->(exception:, attempt:, next_delay:)`, `next_delay` in nanoseconds |
+| `on_success:` | nil | `->(result:, attempts:)` |
+| `on_failure:` | nil | `->(exception:, attempts:)`; one that raises does not mask the exception |
+| `random:` | `Random` | where draws come from: anything answering `rand(2**64)` |
+
+Exhaustion raises `ChronoMachines::MaxRetriesExceededError` (with
+`original_exception` and `attempts`); a halt, a hint beyond the cap and an
+exception outside `retryable:` re-raise the exception itself.
 
 ```ruby
-class WeatherService
-  include ChronoMachines::DSL
-
-  chrono_policy :weather_api,
-    max_attempts: 4,
-    base_delay: 0.2,
-    max_delay: 10,
-    retryable_exceptions: [Net::TimeoutError, Net::HTTPServerError],
-    on_failure: ->(exception:, attempts:) {
-      # Serve stale data when API is completely down
-      Rails.cache.write("weather_service_down", true, expires_in: 5.minutes)
-    }
-
-  def current_weather(location)
-    with_chrono_policy(:weather_api) do
-      response = HTTP.timeout(connect: 2, read: 5)
-                    .get("https://api.weather.com/#{location}")
-      JSON.parse(response.body)
-    end
-  rescue ChronoMachines::MaxRetriesExceededError
-    # Return cached data if available
-    Rails.cache.fetch("weather_#{location}", expires_in: 1.hour) do
-      { temperature: "Unknown", status: "Service Unavailable" }
-    end
-  end
-end
+fetch = ChronoMachines::Executor.new(
+  BACKOFF, 5,
+  retryable: [RateLimited, Timeout::Error],
+  delay_from: ->(exception:, attempt:) { exception.retry_after_ns if exception.is_a?(RateLimited) },
+  on_retry: ->(exception:, attempt:, next_delay:) { log(attempt, next_delay) }
+)
+fetch.call { client.get('/vacancies') }
 ```
 
-### Background Job Retry Logic
+### Deadlines
+
+Every hold-off is clamped to the ambient `deadline_machines` budget. When the
+caller's own budget is spent the executor stops retrying and raises
+`DeadlineMachines::Exceeded`; a deadline error from a narrower inner scope is
+retried like any other failure.
 
 ```ruby
-class EmailDeliveryJob
-  include ChronoMachines::DSL
-
-  chrono_policy :email_delivery,
-    max_attempts: 8,
-    base_delay: 1,
-    multiplier: 1.5,
-    max_delay: 300, # 5 minutes max
-    retryable_exceptions: [Net::SMTPServerBusy, Net::SMTPTemporaryError],
-    on_failure: ->(exception:, attempts:) {
-      # Move to dead letter queue after all retries
-      DeadLetterQueue.push(job_data, reason: exception.message)
-    }
-
-  def perform(email_data)
-    with_chrono_policy(:email_delivery) do
-      EmailService.deliver(email_data)
-    end
-  end
+DeadlineMachines.with_deadline(2 * 1_000_000_000) do
+  ChronoMachines.retry(BACKOFF, 10) { flaky_call }
 end
 ```
 
-## Testing Strategies
+### Scheduling without sleeping
 
-### Mocking Time and Retries
+A job queue that reschedules instead of sleeping asks the shape directly:
+`BACKOFF.delay(executions, Random.rand(2**64))` is the wait before the next
+run. See [docs/RAILS_INTEGRATION.md](docs/RAILS_INTEGRATION.md).
 
-```ruby
-require "minitest/autorun"
-require "mocha/minitest"
+## Rust
 
-class PaymentServiceTest < Minitest::Test
-  def setup
-    @service = PaymentService.new
-  end
-
-  def test_retries_payment_on_timeout
-    charge_response = { id: "ch_123", amount: 100 }
-
-    Stripe::Charge.expects(:create)
-      .raises(Net::TimeoutError).once
-      .then.returns(charge_response)
-
-    # Mock sleep to avoid test delays
-    ChronoMachines::Executor.any_instance.expects(:robust_sleep).at_least_once
-
-    result = @service.charge(100)
-    assert_equal charge_response, result
-  end
-
-  def test_respects_max_attempts
-    Stripe::Charge.expects(:create)
-      .raises(Net::TimeoutError).times(3)
-
-    assert_raises(ChronoMachines::MaxRetriesExceededError) do
-      @service.charge(100)
-    end
-  end
-
-  def test_preserves_original_exception
-    original_error = Net::TimeoutError.new("Connection timed out")
-    Stripe::Charge.expects(:create).raises(original_error).times(3)
-
-    begin
-      @service.charge(100)
-      flunk "Expected MaxRetriesExceededError to be raised"
-    rescue ChronoMachines::MaxRetriesExceededError => e
-      assert_equal 3, e.attempts
-      assert_equal original_error, e.original_exception
-      assert_equal "Connection timed out", e.original_exception.message
-    end
-  end
-end
-```
-
-### Testing Callbacks
-
-```ruby
-class CallbackTest < Minitest::Test
-  def test_calls_retry_callback_with_correct_context
-    retry_calls = []
-    call_count = 0
-
-    result = ChronoMachines.retry(
-      max_attempts: 3,
-      base_delay: 0.001, # Short delay for tests
-      on_retry: ->(exception:, attempt:, next_delay:) {
-        retry_calls << {
-          attempt: attempt,
-          delay: next_delay,
-          exception_message: exception.message
-        }
-      }
-    ) do
-      call_count += 1
-      raise "Fail" if call_count < 2
-      "Success"
-    end
-
-    assert_equal "Success", result
-    assert_equal 1, retry_calls.length
-    assert_equal 1, retry_calls.first[:attempt]
-    assert retry_calls.first[:delay] > 0
-    assert_equal "Fail", retry_calls.first[:exception_message]
-  end
-
-  def test_calls_success_callback
-    success_called = false
-    result_captured = nil
-    attempts_captured = nil
-
-    result = ChronoMachines.retry(
-      on_success: ->(result:, attempts:) {
-        success_called = true
-        result_captured = result
-        attempts_captured = attempts
-      }
-    ) do
-      "Operation succeeded"
-    end
-
-    assert success_called
-    assert_equal "Operation succeeded", result_captured
-    assert_equal 1, attempts_captured
-  end
-
-  def test_calls_failure_callback
-    failure_called = false
-    exception_captured = nil
-
-    assert_raises(ChronoMachines::MaxRetriesExceededError) do
-      ChronoMachines.retry(
-        max_attempts: 2,
-        on_failure: ->(exception:, attempts:) {
-          failure_called = true
-          exception_captured = exception
-        }
-      ) do
-        raise "Always fails"
-      end
-    end
-
-    assert failure_called
-    assert_equal "Always fails", exception_captured.message
-  end
-end
-```
-
-### Testing DSL Integration
-
-```ruby
-class DSLTestExample < Minitest::Test
-  class TestService
-    include ChronoMachines::DSL
-
-    chrono_policy :test_policy, max_attempts: 2, base_delay: 0.001
-
-    def risky_operation
-      with_chrono_policy(:test_policy) do
-        # Simulated operation
-        yield if block_given?
-      end
-    end
-  end
-
-  def test_dsl_policy_definition
-    service = TestService.new
-
-    call_count = 0
-    result = service.risky_operation do
-      call_count += 1
-      raise "Fail" if call_count < 2
-      "Success"
-    end
-
-    assert_equal "Success", result
-    assert_equal 2, call_count
-  end
-
-  def test_dsl_with_inline_options
-    service = TestService.new
-
-    assert_raises(ChronoMachines::MaxRetriesExceededError) do
-      service.with_chrono_policy(max_attempts: 1) do
-        raise "Always fails"
-      end
-    end
-  end
-end
-```
-
-## TestHelper for Library Authors
-
-ChronoMachines provides a test helper module for library authors who want to integrate ChronoMachines testing utilities into their own test suites.
-
-### Setup
-
-```ruby
-require 'chrono_machines/test_helper'
-
-class MyLibraryTest < Minitest::Test
-  include ChronoMachines::TestHelper
-
-  def setup
-    super # Important: calls ChronoMachines config reset
-    # Your setup code here
-  end
-end
-```
-
-### Features
-
-**Configuration Reset**: The TestHelper automatically resets ChronoMachines configuration before each test, ensuring test isolation.
-
-**Custom Assertions**: Provides specialized assertions for testing delay ranges:
-
-```ruby
-def test_delay_calculation
-  executor = ChronoMachines::Executor.new(base_delay: 0.1, multiplier: 2)
-  delay = executor.send(:calculate_delay, 1)
-
-  # Assert delay is within expected jitter range
-  assert_cm_delay_range(delay, 0.0, 0.1, "First attempt delay out of range")
-end
-```
-
-**Available Assertions**:
-- `assert_cm_delay_range(delay, min, max, message = nil)` - Assert delay falls within expected range
-
-### Integration Example
-
-```ruby
-# In your gem's test_helper.rb
-require 'minitest/autorun'
-require 'chrono_machines/test_helper'
-
-class TestBase < Minitest::Test
-  include ChronoMachines::TestHelper
-
-  def setup
-    super
-    # Reset any additional state
-  end
-end
-
-# In your specific tests
-class RetryServiceTest < TestBase
-  def test_retry_with_custom_policy
-    # ChronoMachines config is automatically reset
-    # You can safely define test-specific policies
-
-    ChronoMachines.configure do |config|
-      config.define_policy(:test_policy, max_attempts: 2)
-    end
-
-    result = ChronoMachines.retry(:test_policy) do
-      "success"
-    end
-
-    assert_equal "success", result
-  end
-end
-```
-
-## Why ChronoMachines?
-
-### Built for Modern Ruby
-- **Ruby 4.0+ Support**: Fiber-aware sleep handling
-- **Clean Architecture**: Separation of concerns with configurable policies
-- **Rich Instrumentation**: Comprehensive callback system for monitoring
-- **Battle-Tested**: Full jitter implementation prevents thundering herds
-
-### Time-Tested Patterns
-- **Exponential Backoff**: Industry-standard retry timing
-- **Circuit Breaking**: Fail-fast when upstream is down
-- **Fallback Support**: Graceful degradation strategies
-- **Exception Preservation**: Original errors aren't lost in retry logic
+The core is the `chrono-machines` crate: `no_std`, allocation-free, no
+dependencies. See its [README](ext/chrono_machines_native/core/README.md).
 
 ## A Word from the Time Corps Engineering Division
 
@@ -663,6 +182,15 @@ As I always say when debugging production: 'Time heals all wounds, but jitter pr
 3. Commit your changes (`git commit -am 'Add temporal stabilization'`)
 4. Push to the branch (`git push origin feature/quantum-retries`)
 5. Create a new Pull Request (and wait for the Time Lords to review)
+
+## 📡 Credits
+
+**AMS Metcalfe**, NCC-1973, *Metcalfe*-class tender.
+
+Named for Robert Metcalfe, whose 1973 Ethernet memo at Xerox PARC started the
+shared network that, in Metcalfe and Boggs's 1976 paper, settled collisions by
+having each station wait a random, exponentially growing number of slots
+before trying again: randomised exponential backoff.
 
 ## License
 

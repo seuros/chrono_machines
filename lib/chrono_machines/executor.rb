@@ -1,75 +1,113 @@
 # frozen_string_literal: true
 
 module ChronoMachines
+  # A blocking retry runtime over {Retry}: runs a block, retries the
+  # exceptions it is told to, and sleeps each hold-off inside the ambient
+  # +deadline_machines+ budget. Kernel#sleep yields to a fiber scheduler, so
+  # it waits without blocking other fibers under one.
+  #
+  # +strategy+ and +max_attempts+ are {Retry}'s, positional. The keywords
+  # belong to this runtime, which the core has no counterpart for:
+  #
+  # - +retryable:+ the exception classes worth retrying (default
+  #   +[StandardError]+); anything else is re-raised at once.
+  # - +delay_from:+ called with +exception:+ and +attempt:+ before each
+  #   retry: nil keeps the strategy, Integer nanoseconds replace its delay
+  #   (beyond the strategy's cap: give up), +:halt+ gives up.
+  # - +on_retry:+ (+exception:+, +attempt:+, +next_delay:+ in nanoseconds),
+  #   +on_success:+ (+result:+, +attempts:+), +on_failure:+ (+exception:+,
+  #   +attempts:+); an +on_failure+ that raises does not mask the exception.
+  # - +random:+ where draws come from, anything answering +rand(2**64)+.
+  #
+  # Exhaustion raises {MaxRetriesExceededError}; a halt, a hint past the cap
+  # and an exception outside +retryable+ re-raise the exception itself.
   class Executor
-    ATTEMPT_LIMIT = 255
+    NS_PER_SECOND = 1_000_000_000
+    DRAWS = 1 << 64
+    private_constant :NS_PER_SECOND, :DRAWS
 
-    def initialize(policy_or_options = {})
-      policy_options = if policy_or_options.is_a?(Symbol)
-                         ChronoMachines.config.get_policy(policy_or_options)
-                       else
-                         ChronoMachines.config.get_policy(Configuration::DEFAULT_POLICY_NAME).merge(policy_or_options)
-                       end
+    attr_reader :strategy, :max_attempts
 
-      @backoff_strategy = policy_options[:backoff_strategy] || :exponential
-      @max_attempts = policy_options[:max_attempts]
-      unless @max_attempts.is_a?(Integer) && @max_attempts.between?(1, ATTEMPT_LIMIT)
-        raise ArgumentError, "max_attempts must be an Integer in 1..#{ATTEMPT_LIMIT} " \
-                             "(the native backend counts attempts in a u8); got #{@max_attempts.inspect}"
-      end
+    def initialize(strategy, max_attempts, retryable: [StandardError], delay_from: nil, on_retry: nil,
+                   on_success: nil, on_failure: nil, random: Random)
+      # Validates both natively: TypeError or RangeError, as Retry.new.
+      Retry.new(strategy, max_attempts)
+      @strategy = strategy
+      @max_attempts = max_attempts
+      @retryable = exception_classes(retryable)
+      @delay_from = callable(delay_from, 'delay_from')
+      @on_retry = callable(on_retry, 'on_retry')
+      @on_success = callable(on_success, 'on_success')
+      @on_failure = callable(on_failure, 'on_failure')
+      raise TypeError, "random must answer rand, got #{random.inspect}" unless random.respond_to?(:rand)
 
-      @base_delay = policy_options[:base_delay]
-      @multiplier = policy_options[:multiplier] || 2
-      @max_delay = policy_options[:max_delay]
-      @jitter_factor = policy_options[:jitter_factor]
-      @random = policy_options[:random] || Random
-      raise ArgumentError, "random must respond to #rand; got #{@random.inspect}" unless @random.respond_to?(:rand)
-      @retryable_exceptions = policy_options[:retryable_exceptions]
-      @delay_from = policy_options[:delay_from]
-      @on_failure = policy_options[:on_failure]
-      @on_retry = policy_options[:on_retry]
-      @on_success = policy_options[:on_success]
-    end
-
-    def next_delay(attempt:, exception: nil)
-      raise ArgumentError, 'attempt must be a positive Integer' unless attempt.is_a?(Integer) && attempt.positive?
-      return if exception && !retryable_exception?(exception)
-      return if attempt >= @max_attempts
-
-      resolve_delay(exception, attempt)
+      @random = random
+      freeze
     end
 
     def call
-      attempts = 0
+      streak = Retry.new(@strategy, @max_attempts)
       DeadlineMachines.check!
-
-      result = begin
-        attempts += 1
-        yield
+      begin
+        result = yield
       rescue StandardError => e
-        raise if caller_gave_up?(e)
+        raise e if caller_gave_up?(e)
 
-        delay = next_delay(attempt: attempts, exception: e)
-        unless delay
-          handle_final_failure(e, attempts)
-          raise MaxRetriesExceededError.new(e, attempts) if retryable_exception?(e) && attempts >= @max_attempts
+        attempt = streak.failures + 1
+        delay = retryable?(e) ? hold_off(streak, e, attempt) : :rejected
+        unless delay.is_a?(Integer)
+          give_up(e, attempt)
+          raise MaxRetriesExceededError.new(e, attempt) if delay == :exhausted
 
           raise e
         end
-
-        stop_on_spent_budget(e, attempts)
-        budget = DeadlineMachines.clamp_sleep(delay)
-        @on_retry&.call(exception: e, attempt: attempts, next_delay: budget)
-        robust_sleep(DeadlineMachines.clamp_sleep(budget))
-        stop_on_spent_budget(e, attempts)
+        wait(delay, e, attempt)
         retry
       end
-
-      @on_success&.call(result: result, attempts: attempts)
+      @on_success&.call(result: result, attempts: streak.failures + 1)
       result
     end
 
     private
+
+    def exception_classes(classes)
+      valid = classes.instance_of?(Array) && classes.all? { |type| type.is_a?(Class) && type <= Exception }
+      raise TypeError, "retryable must be an Array of exception classes, got #{classes.inspect}" unless valid
+
+      classes.dup.freeze
+    end
+
+    def callable(hook, name)
+      return hook if hook.nil? || hook.respond_to?(:call)
+
+      raise TypeError, "#{name} must answer call, got #{hook.inspect}"
+    end
+
+    def retryable?(error)
+      @retryable.any? { |type| error.is_a?(type) }
+    end
+
+    # Exhaustion wins over any hint: the hook is not asked on the last attempt.
+    def hold_off(streak, error, attempt)
+      return :exhausted if @max_attempts && attempt >= @max_attempts
+
+      hint = @delay_from&.call(exception: error, attempt: attempt)
+      case hint
+      when nil then streak.failed(@random.rand(DRAWS))
+      when Integer then streak.hinted(hint)
+      when :halt then :halt
+      else raise TypeError, "delay_from must answer nil, Integer nanoseconds or :halt, got #{hint.inspect}"
+      end
+    end
+
+    def wait(delay, error, attempt)
+      stop_on_spent_budget(error, attempt)
+      delay = DeadlineMachines.clamp_sleep(delay)
+      @on_retry&.call(exception: error, attempt: attempt, next_delay: delay)
+      delay = DeadlineMachines.clamp_sleep(delay)
+      sleep(Rational(delay, NS_PER_SECOND)) if delay.positive?
+      stop_on_spent_budget(error, attempt)
+    end
 
     # A deadline error from a narrower inner scope is a timeout worth retrying.
     # One raised because this caller's own budget is gone is not.
@@ -77,129 +115,17 @@ module ChronoMachines
       error.is_a?(DeadlineMachines::Error) && DeadlineMachines.current&.done?
     end
 
-    def stop_on_spent_budget(exception, attempts)
+    def stop_on_spent_budget(error, attempt)
       return unless DeadlineMachines.current&.done?
 
-      handle_final_failure(exception, attempts)
+      give_up(error, attempt)
       DeadlineMachines.check!
     end
 
-    def retryable_exception?(exception)
-      @retryable_exceptions.any? { |type| exception.is_a?(type) }
-    end
-
-    # delay_from(exception:, attempt:) overrides the backoff: nil -> backoff,
-    # Numeric -> verbatim (beyond max_delay: halt), :halt/false -> stop.
-    def resolve_delay(exception, attempts)
-      return calculate_delay(attempts) unless exception && @delay_from
-
-      hint = @delay_from.call(exception: exception, attempt: attempts)
-      case hint
-      when nil
-        calculate_delay(attempts)
-      when Numeric
-        return if @max_delay && hint > @max_delay
-
-        hint
-      when :halt, false
-        nil
-      else
-        raise ArgumentError, "delay_from must return nil, a Numeric, :halt or false; got #{hint.inspect}"
-      end
-    end
-
-    # Pure Ruby implementation of delay calculation (exponential backoff)
-    def ruby_calculate_delay_exponential(attempts)
-      base_exponential_delay = [@base_delay * (@multiplier**(attempts - 1)), @max_delay].min
-      apply_jitter(base_exponential_delay)
-    end
-
-    # Pure Ruby implementation of constant backoff
-    def ruby_calculate_delay_constant(_attempts)
-      apply_jitter(@base_delay)
-    end
-
-    # Pure Ruby implementation of Fibonacci backoff
-    def ruby_calculate_delay_fibonacci(attempts)
-      fib = fibonacci(attempts)
-      base_delay = [@base_delay * fib, @max_delay].min
-      apply_jitter(base_delay)
-    end
-
-    # The nth Fibonacci number (1-indexed), as a delay factor, accumulated step
-    # for step with `fibonacci` in ext/chrono_machines_native/core/src/backoff.rs,
-    # whose documentation covers why neither side counts in integers.
-    def fibonacci(n)
-      previous = 0.0
-      current = 1.0
-      n.times { previous, current = current, previous + current }
-      previous
-    end
-
-    # Main calculate_delay dispatches to the appropriate strategy
-    def ruby_calculate_delay(attempts)
-      case @backoff_strategy
-      when :exponential
-        ruby_calculate_delay_exponential(attempts)
-      when :constant
-        ruby_calculate_delay_constant(attempts)
-      when :fibonacci
-        ruby_calculate_delay_fibonacci(attempts)
-      else
-        raise ArgumentError, "Unknown backoff strategy: #{@backoff_strategy}"
-      end
-    end
-
-    # By default, use Ruby implementation (may be overridden by native extension)
-    alias_method :calculate_delay, :ruby_calculate_delay
-
-    def apply_jitter(delay)
-      jitter_factor = normalized_jitter_factor
-      delay * (1 - jitter_factor + (@random.rand * jitter_factor))
-    end
-
-    def robust_sleep(delay)
-      # Handle potential interruptions to sleep
-      # In Ruby 3.2+, Kernel.sleep is fiber-aware
-      return if delay <= 0
-
-      begin
-        sleep(delay)
-      rescue Interrupt
-        # Re-raise interrupt signals
-        raise
-      rescue StandardError
-        # Log or handle other sleep interruptions, but continue
-        # In most cases, we want to proceed with the retry
-      end
-    end
-
-    def handle_final_failure(exception, attempts)
-      # Execute fallback block if defined
-      return unless @on_failure
-
-      begin
-        @on_failure.call(exception: exception, attempts: attempts)
-      rescue StandardError
-        # Don't let fallback errors mask the original error
-        # Could log this or handle as needed
-      end
-    end
-
-    def normalized_jitter_factor
-      factor = Float(@jitter_factor)
-      raise ArgumentError, 'jitter_factor cannot be NaN' if factor.nan?
-
-      factor.clamp(0.0, 1.0)
-    rescue ArgumentError, TypeError
-      raise ArgumentError, 'jitter_factor must be a numeric value'
+    def give_up(error, attempt)
+      @on_failure&.call(exception: error, attempts: attempt)
+    rescue StandardError
+      nil
     end
   end
-end
-
-# Load optional native speedup if available
-begin
-  require_relative 'native_speedup'
-rescue LoadError
-  # Native extension not available, continue with pure Ruby implementation
 end

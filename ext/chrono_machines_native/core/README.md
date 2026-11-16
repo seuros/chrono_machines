@@ -1,313 +1,88 @@
-# ChronoMachines (Rust Core)
+# chrono-machines (Rust core)
 
-Pure Rust exponential backoff and retry library with full jitter support.
+Backoff timing for retries: how long to hold off after the `n`th consecutive
+failure. `no_std`, allocation-free, no dependencies, no `unsafe`.
 
-## Features
-
-- **Multiple Backoff Strategies**: Exponential, Constant, and Fibonacci
-- **Full Jitter**: Prevents thundering herd problem by randomizing delays
-- **`no_std` Compatible**: Works in embedded environments (with optional `alloc`)
-- **Zero Allocation**: Core delay calculations use stack-only data structures
-- **Retry Builder**: Fluent `.retry()` API returning rich `RetryOutcome`
-- **Instrumentation Hooks**: Separate `notify`, `on_success`, and `on_failure` callbacks
-- **Server-Hinted Delays**: `delay_from` honors `Retry-After`-style hints from errors
-- **Named Policies**: Optional registry (std/alloc) with global helpers
-- **ESP32 Ready**: Tested on embedded systems
-- **Fast**: Minimal overhead for retry operations
-
-## Usage
-
-Add to your `Cargo.toml`:
+The core reads no clock, sleeps nowhere and owns no random generator. The
+caller passes the uniform `u64` draw jitter consumes and does the waiting, so
+the same type drives a blocking loop, an async task or a bare-metal timer.
 
 ```toml
 [dependencies]
 chrono-machines = "0.11.1" # x-release-please-version
 ```
 
-### Basic Example
+## Shapes
+
+Each shape is validated by its `new`, which answers `None` for one no delay
+can come from (a base past the cap, a multiplier below one, a jitter outside
+`0.0..=1.0`, NaN anywhere).
+
+| Shape | Delay after failure `n` (before jitter) |
+|-------|------------------------------------------|
+| `Exponential::new(base, multiplier, max, jitter)` | `base * multiplier^(n-1)`, capped at `max` |
+| `Constant::new(span, jitter)` | `span` |
+| `Fibonacci::new(base, max, jitter)` | `base * fib(n)` (1, 1, 2, 3, 5, ...), capped at `max` |
+
+Jitter takes `jitter * draw / 2^64` of the capped delay off, so a delay lies
+in `capped * (1 - jitter) ..= capped`. A zero draw is the capped delay
+exactly, which makes tests deterministic without a seeded generator.
 
 ```rust
-use chrono_machines::Policy;
+use core::num::NonZeroU8;
+use core::time::Duration;
+use chrono_machines::{Fibonacci, Strategy};
 
-let policy = Policy {
-    max_attempts: 5,
-    base_delay_ms: 100,
-    multiplier: 2.0,
-    max_delay_ms: 10_000,
-};
-
-// Calculate delay for first retry using full jitter (1.0)
-let delay_ms = policy.calculate_delay(1, 1.0);
-println!("Wait {}ms before retry", delay_ms);
+let shape: Strategy = Fibonacci::new(Duration::from_millis(100), Duration::from_secs(5), 0.5)
+    .ok_or("a valid shape")?
+    .into();
+let fifth = NonZeroU8::new(5).ok_or("non-zero")?;
+assert_eq!(shape.delay(fifth, 0), Duration::from_millis(500));
+assert_eq!(shape.delay(fifth, 1 << 63), Duration::from_millis(375));
+# Ok::<(), &str>(())
 ```
 
-### With Custom RNG (no_std)
+## Retry
+
+`Retry` counts consecutive failures against an attempt budget that includes
+the first try (`None` is unbounded). Each failure answers its hold-off, or
+`Refusal::Exhausted` once the budget is spent; a refusal changes nothing.
+`hinted` takes a delay the failure named itself (an HTTP `Retry-After`) and
+refuses one past the shape's cap with `Refusal::BeyondCap`. `succeeded` ends
+the streak, so one value also serves a loop that never gives up.
+
+A blocking retry loop, the operation and the generator being the caller's:
 
 ```rust
-use chrono_machines::Policy;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+use core::num::NonZeroU8;
+use core::time::Duration;
+use chrono_machines::{Exponential, Refusal, Retry};
 
-let policy = Policy::default();
-let mut rng = StdRng::seed_from_u64(12345);
+fn fetch(calls: &mut u32) -> Result<&'static str, &'static str> {
+    *calls += 1;
+    if *calls < 3 { Err("busy") } else { Ok("payload") }
+}
 
-// Calculate delay with 50% jitter (0.5)
-let delay = policy.calculate_delay_with_rng(1, 0.5, &mut rng);
-```
-
-### Fluent Retry Builder
-
-```rust
-use chrono_machines::{backoff::ExponentialBackoff, retry::Retryable};
-
-let mut attempts = 0;
-let operation = || {
-    attempts += 1;
-    if attempts < 3 {
-        Err("not yet")
-    } else {
-        Ok("success")
+let shape = Exponential::new(Duration::from_millis(1), 2.0, Duration::from_millis(8), 1.0)
+    .ok_or("a valid shape")?;
+let mut retry = Retry::new(shape.into(), NonZeroU8::new(5));
+let mut seed = 0x9E37_79B9_7F4A_7C15_u64;
+let mut calls = 0;
+let payload = loop {
+    match fetch(&mut calls) {
+        Ok(payload) => break payload,
+        Err(error) => match retry.failed(seed) {
+            Ok(delay) => std::thread::sleep(delay),
+            Err(Refusal::Exhausted | Refusal::BeyondCap) => return Err(error),
+        },
     }
+    seed ^= seed << 13;
+    seed ^= seed >> 7;
+    seed ^= seed << 17;
 };
-
-# #[cfg(feature = "std")]
-let outcome = operation
-    .retry(ExponentialBackoff::default().max_attempts(5))
-    .notify(|ctx| {
-        if let Some(err) = ctx.error {
-            let next = ctx.next_delay_ms.unwrap_or(0);
-            println!("attempt {} failed ({err}), next delay {next}ms", ctx.attempt);
-        }
-    })
-    .on_success(|ctx| {
-        println!("attempt {} succeeded", ctx.attempt);
-    })
-    .on_failure(|err| {
-        eprintln!("retry stopped: {err}");
-    })
-    .call()
-    .expect("retry succeeds");
-
-println!("took {} attempts", outcome.attempts());
-println!("value = {}", outcome.into_inner());
+assert_eq!((payload, retry.failures()), ("payload", 2));
+# Ok::<(), &str>(())
 ```
 
-### Steady-State Loops (`Backoff`)
-
-The retry builder runs one operation until it succeeds. A poll loop, a
-supervised worker or a reconnect runs for as long as the process does: it
-should hold off longer while cycles keep failing and return to its own cadence
-on the first success. `Backoff` keeps that streak; the loop, the sleep and the
-stop signal stay yours.
-
-```rust
-use chrono_machines::{Backoff, ExponentialBackoff};
-
-let mut backoff = Backoff::new(
-    ExponentialBackoff::new()
-        .max_attempts(u8::MAX) // never spent
-        .base_delay_ms(1_000)
-        .max_delay_ms(30_000)
-        .jitter_factor(0.25),
-);
-
-// loop {
-//     match poll() {
-//         Ok(_) => { backoff.succeeded(); sleep_ms(interval) }
-//         Err(_) => sleep_ms(backoff.failed().unwrap_or(interval)),
-//     }
-// }
-```
-
-`failed()` returns `None` once a bounded strategy's attempts are spent;
-`failed_with_rng()` is the `no_std` entry point.
-
-### Server-Hinted Delays (`delay_from`)
-
-When the server tells you when to come back - HTTP 429 with `Retry-After` - let the error dictate the next delay instead of guessing with backoff:
-
-```rust,ignore
-use chrono_machines::{DelayHint, ExponentialBackoff, Retryable};
-
-let outcome = fetch_api
-    .retry(ExponentialBackoff::default().max_attempts(5).max_delay_ms(30_000))
-    .delay_from(|e: &ApiError, _attempt| match e.retry_after_ms() {
-        Some(ms) => DelayHint::Ms(ms),
-        None => DelayHint::Backoff,
-    })
-    .call()?;
-```
-
-The hook's `DelayHint` controls the retry:
-
-- `Backoff` - no hint; fall back to the backoff strategy
-- `Ms(u64)` - sleep exactly that long (no jitter: the server picked the time, honor it)
-- `Ms` **beyond the strategy's max delay** - halt with `RetryErrorKind::HintHalted`: the server asked for more patience than this policy allows
-- `Halt` - stop retrying immediately, failing with the original error
-
-### Named Policies & DSL (requires `std`)
-
-```rust
-use chrono_machines::{
-    backoff::{BackoffPolicy, ExponentialBackoff},
-    register_global_policy,
-    retry_with_policy,
-};
-
-register_global_policy(
-    "api",
-    BackoffPolicy::from(ExponentialBackoff::new().base_delay_ms(250).max_attempts(4)),
-);
-
-let outcome = retry_with_policy("api", || {
-    // fallible operation
-    Ok::<_, &'static str>("done")
-})
-.expect("named policy is registered");
-
-assert_eq!(outcome.attempts(), 1);
-```
-
-## Algorithm
-
-ChronoMachines implements **full jitter** exponential backoff:
-
-```text
-delay = random(0, min(base * multiplier^(attempt-1), max))  // with jitter_factor = 1.0
-```
-
-This approach:
-1. Calculates exponential backoff: `base * multiplier^(attempt-1)`
-2. Caps at `max_delay_ms`
-3. Applies configurable jitter: blends between deterministic and random delay based on `jitter_factor`
-
-### Why Full Jitter?
-
-Full jitter prevents the "thundering herd" problem where multiple clients retry simultaneously,
-overwhelming a recovering service. By randomizing the delay, retries are naturally distributed
-over time.
-
-## Features
-
-### `std` (default)
-
-Enables standard library support and `StdRng` for `calculate_delay()` method.
-
-### `no_std`
-
-Disable default features for `no_std` environments:
-
-```toml
-[dependencies]
-chrono-machines = { version = "0.11.1", default-features = false } # x-release-please-version
-```
-
-Pure `no_std` (no allocator) gives you the delay math (`Policy`,
-`ExponentialBackoff`/`ConstantBackoff`/`FibonacciBackoff`) and the `Sleeper`
-trait. There's no OS entropy, so provide your own `rand::Rng` and use
-`calculate_delay_with_rng()` / `BackoffStrategy::delay()`.
-
-### `alloc`
-
-Add `alloc` for the fluent `RetryBuilder` (its callbacks are boxed) and the
-vector-backed `PolicyRegistry`, all without `std`:
-
-```toml
-[dependencies]
-chrono-machines = { version = "0.11.1", default-features = false, features = ["alloc"] } # x-release-please-version
-```
-
-Drive a retry loop with a caller-supplied sleeper and RNG:
-
-```rust
-use chrono_machines::{ExponentialBackoff, Retryable};
-use rand::{rngs::StdRng, SeedableRng};
-
-let sleeper = chrono_machines::sleep::FnSleeper(|_ms| { /* embedded delay */ });
-let rng = StdRng::seed_from_u64(0xC0FFEE);
-# let operation = || Ok::<_, &str>("done");
-
-let outcome = operation
-    .retry(ExponentialBackoff::default().max_attempts(5))
-    .call_with_sleeper_and_rng(sleeper, rng);
-```
-
-### Async runtimes
-
-`Sleeper` blocks. On a runtime, enable `async` and use `.retry_async()`:
-
-```toml
-[dependencies]
-chrono-machines = { version = "0.11.1", features = ["async"] } # x-release-please-version
-```
-
-```rust,ignore
-use chrono_machines::{AsyncRetryable, ExponentialBackoff};
-use std::time::Duration;
-
-let outcome = (|| async { fetch(&url).await })
-    .retry_async(ExponentialBackoff::default())
-    .when(|e: &Error| e.is_transient())
-    .call_async(|ms| tokio::time::sleep(Duration::from_millis(ms)))
-    .await?;
-```
-
-The sleeper is any `Fn(u64) -> Future<Output = ()>` — tokio, async-std, embassy.
-Builder methods are shared with the sync driver. `async` implies `alloc`, not
-`std`; `call_async_with_rng` is the `no_std` entry point.
-
-The closure must return a fresh future per attempt. Dropping the returned
-future cancels the retry.
-
-When the server dictates the delay (`Retry-After`, 429), chain `.delay_from()`
-(see Server-Hinted Delays above) - it is shared with the async driver.
-
-## Backoff Strategies
-
-### Exponential Backoff
-Delays grow exponentially: `base * multiplier^(attempt-1)`
-
-```rust
-use chrono_machines::{ExponentialBackoff, Retryable};
-# let operation = || Ok::<_, &str>("done");
-
-let result = operation
-    .retry(
-        ExponentialBackoff::new()
-            .base_delay_ms(100)
-            .multiplier(2.0)
-            .max_delay_ms(10_000),
-    )
-    .call();
-# assert!(result.is_ok());
-```
-
-### Constant Backoff
-Fixed delay with optional jitter
-
-```rust
-use chrono_machines::{ConstantBackoff, Retryable};
-# let operation = || Ok::<_, &str>("done");
-
-let result = operation
-    .retry(ConstantBackoff::new().delay_ms(500).jitter_factor(0.1))
-    .call();
-# assert!(result.is_ok());
-```
-
-### Fibonacci Backoff
-Delays grow by Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13...
-
-```rust
-use chrono_machines::{FibonacciBackoff, Retryable};
-# let operation = || Ok::<_, &str>("done");
-
-let result = operation
-    .retry(FibonacciBackoff::new().base_delay_ms(100).max_delay_ms(5_000))
-    .call();
-# assert!(result.is_ok());
-```
-
-## License
-
-MIT
+An async loop is the same with the runtime's timer in place of
+`thread::sleep`.

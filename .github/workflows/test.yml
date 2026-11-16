@@ -6,106 +6,108 @@ on:
   pull_request:
     branches: [ master ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test-rust:
+  lint:
+    name: Dictator
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seuros/setup-dictator@master
+        with:
+          version: '0.28.1'
+      - run: dictator lint --format github .
+
+  crates:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Rust (mise)
-        uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@v5
         with:
-          install_args: rust
-      - name: Run Rust core tests
-        run: |
-          cd ext/chrono_machines_native/core
-          cargo test --all-features
-      - name: Run Rust doc tests
-        run: |
-          cd ext/chrono_machines_native/core
-          cargo test --doc
-      - name: Lint and test every feature combination
-        working-directory: ext/chrono_machines_native/core
-        run: |
-          for features in "" alloc async std alloc,async; do
-            echo "::group::features: ${features:-none}"
-            cargo clippy --no-default-features --features "$features" --all-targets -- -D warnings
-            cargo test --no-default-features --features "$features" --lib --tests
-            echo "::endgroup::"
-          done
-
-  test-no-std:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up Rust (mise)
-        uses: jdx/mise-action@v5
-        with:
-          install_args: rust
-      - name: Build pure no_std (bare metal)
-        run: cargo build --no-default-features --target thumbv7em-none-eabihf
-        working-directory: ext/chrono_machines_native/core
-      - name: Build no_std + alloc (bare metal)
-        run: cargo build --no-default-features --features alloc --target thumbv7em-none-eabihf
-        working-directory: ext/chrono_machines_native/core
-      - name: Clippy (no_std + alloc)
-        run: cargo clippy --no-default-features --features alloc --target thumbv7em-none-eabihf -- -D warnings
-        working-directory: ext/chrono_machines_native/core
-
-  test-mri:
-    needs: test-rust
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        ruby-version: ['4.0']
-    env:
-      MISE_RUBY_VERSION: ${{ matrix.ruby-version }}
-      BUNDLE_PATH: vendor/bundle
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up toolchain (mise)
-        uses: jdx/mise-action@v5
-      - name: Cache gems
-        uses: actions/cache@v6
-        with:
-          path: vendor/bundle
-          key: ${{ runner.os }}-gems-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile', '*.gemspec') }}
-
-      - name: Install gems
-        run: bundle install --jobs 4
-      - name: Run tests
-        run: bundle exec rake test TESTOPTS=--coverage
-
-      - name: Coverage summary
-        if: always() && hashFiles('coverage/coverage.md') != ''
-        run: cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
-
-  test-jvm-rubies:
-    runs-on: ubuntu-latest
-    needs: test-mri
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby-version: ['jruby-10.1.2.0', 'truffleruby-40.0.0']
-    env:
-      BUNDLE_PATH: vendor/bundle
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up toolchain (mise)
-        uses: jdx/mise-action@v5
-        with:
-          # First release that hands `depends` tools to ruby-build (jdx/mise#13942).
-          version: 2026.10.3
+          # rb-sys gates part of the magnus API on the Ruby it builds against,
+          # so the binding crate needs a Ruby here even though the core does not.
           mise_toml: |
             [tools]
-            ruby = { version = "${{ matrix.ruby-version }}"${{ startsWith(matrix.ruby-version, 'jruby') && ', depends = ["java"]' || '' }} }
-            ${{ startsWith(matrix.ruby-version, 'jruby') && 'java = "temurin-21"' || '' }}
+            ruby = "4.0"
+            rust = { version = "1.99", components = "clippy,rustfmt" }
+
+      - name: Reject path-sourced sibling crates in Cargo.lock
+        run: |
+          ruby -rjson -e '
+            own = JSON.parse(`cargo metadata --no-deps --format-version 1`).fetch("packages").map { |pkg| pkg["name"] }
+            stray = File.read("Cargo.lock").split("[[package]]").filter_map do |pkg|
+              name = pkg[/^name = "([^"]+)"/, 1]
+              next unless name && name.end_with?("-machines") && !own.include?(name)
+              name unless pkg.match?(/^source = "registry/)
+            end
+            abort "Cargo.lock pins sibling crates without a registry source: #{stray.join(", ")}" unless stray.empty?
+          '
+      - name: Lint the workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test the core crate
+        run: cargo test --workspace
+
+      - name: Run doc tests
+        run: cargo test --workspace --doc
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  bare-metal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          mise_toml: |
+            [tools]
+            rust = { version = "1.99", components = "clippy", targets = "thumbv7em-none-eabihf" }
+
+      - name: Locate the core crate
+        id: crates
+        run: |
+          core=''
+          for dir in ext/*/core; do [ -d "$dir" ] && core="$dir"; done
+          echo "core=$core" >> "$GITHUB_OUTPUT"
+
+      - name: Build and lint on bare metal
+        working-directory: ${{ steps.crates.outputs.core }}
+        run: |
+          cargo build --target thumbv7em-none-eabihf
+          cargo clippy --target thumbv7em-none-eabihf -- -D warnings
+
+  ruby:
+    runs-on: ubuntu-latest
+    env:
+      BUNDLE_PATH: vendor/bundle
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          mise_toml: |
+            [tools]
+            ruby = "4.0"
+            rust = { version = "1.99", components = "clippy,rustfmt" }
+
       - name: Cache gems
         uses: actions/cache@v6
         with:
           path: vendor/bundle
-          key: ${{ runner.os }}-gems-${{ matrix.ruby-version }}-${{ hashFiles('Gemfile', '*.gemspec') }}
+          key: ${{ runner.os }}-gems-${{ hashFiles('Gemfile', '*.gemspec') }}
 
       - name: Install gems
         run: bundle install --jobs 4
+
       - name: Run tests
         run: bundle exec rake test
+
+      - name: Validate signatures
+        run: bundle exec rbs -I sig validate

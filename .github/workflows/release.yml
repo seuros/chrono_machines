@@ -52,9 +52,29 @@ jobs:
           path: pkg/*.gem
           if-no-files-found: error
 
-  build-native-gems:
+  detect-extension:
     needs: release-please
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.probe.outputs.native }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - id: probe
+        run: |
+          if grep -q 'spec.extensions' ./*.gemspec; then
+            echo 'native=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'native=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  build-native-gems:
+    needs:
+      - release-please
+      - detect-extension
+    if: ${{ needs.detect-extension.outputs.native == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -100,7 +120,7 @@ jobs:
       - release-please
       - build-ruby-gem
       - build-native-gems
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    if: ${{ always() && needs.build-ruby-gem.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
@@ -181,6 +201,8 @@ jobs:
             echo "Processing: $gem"
             echo "Publishing: $gem"
 
+            # PIPESTATUS gives gem push's own status; pipefail would make
+            # bash -e end the step before the already-pushed case is read.
             gem push --key github --host "${HOST}" "$gem" 2>&1 | tee /tmp/push.log
             EXIT_CODE=${PIPESTATUS[0]}
 
