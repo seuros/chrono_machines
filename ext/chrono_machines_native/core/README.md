@@ -16,7 +16,23 @@ chrono-machines = "0.12.0" # x-release-please-version
 
 Each shape is validated by its `new`, which answers `None` for one no delay
 can come from (a base past the cap, a multiplier below one, a jitter outside
-`0.0..=1.0`, NaN anywhere).
+`0.0..=1.0`, NaN anywhere). Every `new` is a `const fn`, so a fixed
+policy is checked at compile time:
+
+```rust
+use core::num::NonZeroU8;
+use core::time::Duration;
+use chrono_machines::{Exponential, Retry, Strategy};
+
+const BACKOFF: Exponential =
+    match Exponential::new(Duration::from_millis(100), 2.0, Duration::from_secs(30), 0.2) {
+        Some(shape) => shape,
+        None => panic!("an invalid backoff"),
+    };
+const POLICY: Retry = Retry::new(Strategy::Exponential(BACKOFF), NonZeroU8::new(5))
+    .with_hint_ceiling(Duration::from_secs(300));
+assert_eq!(POLICY.hint_ceiling(), Some(Duration::from_secs(300)));
+```
 
 | Shape | Delay after failure `n` (before jitter) |
 |-------|------------------------------------------|
@@ -48,7 +64,9 @@ assert_eq!(shape.delay(fifth, 1 << 63), Duration::from_millis(375));
 the first try (`None` is unbounded). Each failure answers its hold-off, or
 `Refusal::Exhausted` once the budget is spent; a refusal changes nothing.
 `hinted` takes a delay the failure named itself (an HTTP `Retry-After`) and
-refuses one past the shape's cap with `Refusal::BeyondCap`. `succeeded` ends
+refuses one past the hint ceiling with `Refusal::BeyondCap`. The ceiling
+starts at the shape's cap; `with_hint_ceiling` sets it apart, so a server
+can ask for longer than your own schedule ever waits. `succeeded` ends
 the streak, so one value also serves a loop that never gives up.
 
 A blocking retry loop, the operation and the generator being the caller's:

@@ -20,6 +20,12 @@ use crate::{Refusal, Strategy};
 /// and one allows none. `None` is unbounded; the failure count then stops
 /// at `u8::MAX`, where every shape's delay has long reached its cap.
 ///
+/// The hint ceiling is the longest hold-off a failure may name for itself,
+/// a separate knob from the shape's cap: a server asking for five minutes is
+/// not a reason to back off five minutes on its own schedule. It starts at
+/// the strategy's [`cap`](Strategy::cap) and is set with
+/// [`with_hint_ceiling`](Self::with_hint_ceiling).
+///
 /// ```
 /// use core::time::Duration;
 /// use chrono_machines::{Constant, Retry};
@@ -38,20 +44,31 @@ use crate::{Refusal, Strategy};
 pub struct Retry {
     strategy: Strategy,
     max_attempts: Option<NonZeroU8>,
+    hint_ceiling: Option<Duration>,
     failures: u8,
     waited: Duration,
 }
 
 impl Retry {
-    /// No failures yet, nothing waited.
+    /// No failures yet, nothing waited; hints honoured up to the
+    /// strategy's cap.
     #[must_use]
     pub const fn new(strategy: Strategy, max_attempts: Option<NonZeroU8>) -> Self {
         Self {
             strategy,
             max_attempts,
+            hint_ceiling: strategy.cap(),
             failures: 0,
             waited: Duration::ZERO,
         }
+    }
+
+    /// Honour hints up to `ceiling`, whatever the strategy's cap: longer or
+    /// shorter than it, and for a shape with no cap too.
+    #[must_use]
+    pub const fn with_hint_ceiling(mut self, ceiling: Duration) -> Self {
+        self.hint_ceiling = Some(ceiling);
+        self
     }
 
     /// The shape the delays come from.
@@ -64,6 +81,12 @@ impl Retry {
     #[must_use]
     pub const fn max_attempts(&self) -> Option<NonZeroU8> {
         self.max_attempts
+    }
+
+    /// The longest hint honoured; `None` honours any.
+    #[must_use]
+    pub const fn hint_ceiling(&self) -> Option<Duration> {
+        self.hint_ceiling
     }
 
     /// Consecutive failures honoured since the start or the last success.
@@ -98,11 +121,11 @@ impl Retry {
     ///
     /// [`Refusal::Exhausted`] when that attempt was the last one allowed,
     /// whatever the hint; [`Refusal::BeyondCap`] when `delay` is longer than
-    /// the strategy's [`cap`](Strategy::cap): the failure asks for more
-    /// patience than the shape allows.
+    /// the [`hint_ceiling`](Self::hint_ceiling): the failure asks for more
+    /// patience than the policy allows.
     pub fn hinted(&mut self, delay: Duration) -> Result<Duration, Refusal> {
         let attempt = self.next_attempt()?;
-        if self.strategy.cap().is_some_and(|cap| delay > cap) {
+        if self.hint_ceiling.is_some_and(|ceiling| delay > ceiling) {
             return Err(Refusal::BeyondCap);
         }
         Ok(self.record(attempt, delay))

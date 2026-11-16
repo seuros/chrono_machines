@@ -170,6 +170,49 @@ fn a_hint_is_taken_verbatim_up_to_the_cap() {
 }
 
 #[test]
+fn the_hint_ceiling_is_its_own_knob() {
+    let shape = exponential(100, 2.0, 1_000, 0.0).into();
+    assert_eq!(Retry::new(shape, None).hint_ceiling(), Some(MS * 1_000));
+    let mut patient = Retry::new(shape, None).with_hint_ceiling(MS * 30_000);
+    assert_eq!(patient.hint_ceiling(), Some(MS * 30_000));
+    assert_eq!(patient.hinted(MS * 30_000), Ok(MS * 30_000));
+    assert_eq!(
+        refused(&mut patient, |retry| retry.hinted(MS * 30_001)),
+        Refusal::BeyondCap
+    );
+    assert_eq!(patient.failed(0), Ok(MS * 200));
+    let mut strict = Retry::new(shape, None).with_hint_ceiling(MS * 10);
+    assert_eq!(
+        refused(&mut strict, |retry| retry.hinted(MS * 11)),
+        Refusal::BeyondCap
+    );
+    assert_eq!(strict.failed(0), Ok(MS * 100));
+    let constant = constant(1, 0.0).into();
+    assert_eq!(Retry::new(constant, None).hint_ceiling(), None);
+    let mut bounded = Retry::new(constant, None).with_hint_ceiling(MS);
+    assert_eq!(
+        refused(&mut bounded, |retry| retry.hinted(MS * 2)),
+        Refusal::BeyondCap
+    );
+}
+
+#[test]
+fn shapes_and_policies_validate_at_compile_time() {
+    const GROW: Exponential = match Exponential::new(MS, 2.0, Duration::from_secs(1), 0.5) {
+        Some(shape) => shape,
+        None => panic!("a valid shape"),
+    };
+    const FIXED: Option<Constant> = Constant::new(MS, 2.0);
+    const FIB: Option<Fibonacci> = Fibonacci::new(MS, MS, 0.0);
+    const POLICY: Retry = Retry::new(Strategy::Exponential(GROW), NonZeroU8::new(3))
+        .with_hint_ceiling(Duration::from_secs(300));
+    assert_eq!(FIXED, None);
+    assert!(FIB.is_some());
+    assert_eq!(POLICY.hint_ceiling(), Some(Duration::from_secs(300)));
+    assert_eq!(POLICY.strategy().cap(), Some(Duration::from_secs(1)));
+}
+
+#[test]
 fn success_ends_the_streak_and_unbounded_never_refuses() {
     let mut retry = Retry::new(fibonacci(10, 1_000, 0.0).into(), NonZeroU8::new(3));
     assert_eq!(retry.failed(0), Ok(MS * 10));

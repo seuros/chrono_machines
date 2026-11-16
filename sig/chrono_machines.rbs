@@ -55,13 +55,18 @@ module ChronoMachines
     def self.new: (strategy strategy, Integer? max_attempts) -> Retry
     def strategy: () -> strategy
     def max_attempts: () -> Integer?
+    # The longest hint honoured, nil for any; starts at the strategy's cap.
+    def hint_ceiling: () -> Integer?
+    # Honours hints up to `ceiling`, whatever the strategy's cap; changes
+    # this streak and answers it.
+    def with_hint_ceiling: (Integer ceiling) -> self
     # Honoured failures since the start or the last success (at most 255).
     def failures: () -> Integer
     # The hold-offs answered since then, summed.
     def waited: () -> Integer
     # The hold-off before the next attempt, or :exhausted.
     def failed: (Integer draw) -> (Integer | :exhausted)
-    # The hint back, or :exhausted / :beyond_cap (past the strategy's cap).
+    # The hint back, or :exhausted / :beyond_cap (past the hint ceiling).
     def hinted: (Integer delay) -> (Integer | :exhausted | :beyond_cap)
     # Ends the streak.
     def succeeded: () -> nil

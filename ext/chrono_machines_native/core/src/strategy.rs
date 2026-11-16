@@ -7,8 +7,12 @@ use crate::span::{fibonacci, jittered, power, scaled};
 
 /// A jitter factor is a share of the delay, `0.0` (none) to `1.0` (all of
 /// it); NaN is outside the range.
-fn valid_jitter(jitter: f64) -> bool {
-    (0.0..=1.0).contains(&jitter)
+const fn valid_jitter(jitter: f64) -> bool {
+    jitter >= 0.0 && jitter <= 1.0
+}
+
+const fn within(base: Duration, max: Duration) -> bool {
+    base.as_nanos() <= max.as_nanos()
 }
 
 /// Delays that grow by `multiplier` per attempt: `base * multiplier^(n-1)`,
@@ -29,14 +33,18 @@ impl Exponential {
     /// `None` unless `base <= max`, `multiplier` is finite and at least
     /// `1.0` (a backoff never shrinks), and `jitter` is in `0.0..=1.0`.
     #[must_use]
-    pub fn new(base: Duration, multiplier: f64, max: Duration, jitter: f64) -> Option<Self> {
-        let valid = base <= max && multiplier.is_finite() && multiplier >= 1.0;
-        (valid && valid_jitter(jitter)).then_some(Self {
-            base,
-            multiplier,
-            max,
-            jitter,
-        })
+    pub const fn new(base: Duration, multiplier: f64, max: Duration, jitter: f64) -> Option<Self> {
+        let valid = within(base, max) && multiplier.is_finite() && multiplier >= 1.0;
+        if valid && valid_jitter(jitter) {
+            Some(Self {
+                base,
+                multiplier,
+                max,
+                jitter,
+            })
+        } else {
+            None
+        }
     }
 
     /// The delay after the first failure, before jitter.
@@ -81,8 +89,12 @@ pub struct Constant {
 impl Constant {
     /// `None` unless `jitter` is in `0.0..=1.0`.
     #[must_use]
-    pub fn new(span: Duration, jitter: f64) -> Option<Self> {
-        valid_jitter(jitter).then_some(Self { span, jitter })
+    pub const fn new(span: Duration, jitter: f64) -> Option<Self> {
+        if valid_jitter(jitter) {
+            Some(Self { span, jitter })
+        } else {
+            None
+        }
     }
 
     /// The delay, before jitter.
@@ -116,8 +128,12 @@ pub struct Fibonacci {
 impl Fibonacci {
     /// `None` unless `base <= max` and `jitter` is in `0.0..=1.0`.
     #[must_use]
-    pub fn new(base: Duration, max: Duration, jitter: f64) -> Option<Self> {
-        (base <= max && valid_jitter(jitter)).then_some(Self { base, max, jitter })
+    pub const fn new(base: Duration, max: Duration, jitter: f64) -> Option<Self> {
+        if within(base, max) && valid_jitter(jitter) {
+            Some(Self { base, max, jitter })
+        } else {
+            None
+        }
     }
 
     /// The delay after the first and second failures, before jitter.

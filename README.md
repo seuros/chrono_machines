@@ -98,8 +98,11 @@ streak.waited                      # => nanoseconds answered so far
 streak.succeeded                   # the streak ends; the next failure is the first again
 ```
 
-`hinted` answers `:beyond_cap` for a hint longer than the shape's cap: the
-failure asks for more patience than the policy allows. Exhaustion wins over
+`hinted` answers `:beyond_cap` for a hint longer than the hint ceiling: the
+failure asks for more patience than the policy allows. The ceiling starts at
+the shape's cap (nil, any hint, for a `Constant`); `with_hint_ceiling(ns)`
+sets it apart from the cap, so a server's `Retry-After` can be honoured past
+your own backoff schedule. `hint_ceiling` reads it. Exhaustion wins over
 any hint. Mutating calls check frozen first (`FrozenError`), then their
 arguments (`TypeError`/`RangeError`), before the core is asked.
 

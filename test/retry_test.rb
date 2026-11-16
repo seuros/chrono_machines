@@ -35,6 +35,23 @@ class RetryTest < Minitest::Test
     assert_equal 2**64 - 1, uncapped.hinted(2**64 - 1)
   end
 
+  def test_the_hint_ceiling_is_its_own_knob
+    streak = C::Retry.new(GROW, nil)
+    assert_equal 1_000 * MS, streak.hint_ceiling
+    assert_same streak, streak.with_hint_ceiling(30_000 * MS)
+    assert_equal 30_000 * MS, streak.hint_ceiling
+    assert_equal 30_000 * MS, streak.hinted(30_000 * MS)
+    assert_equal :beyond_cap, streak.hinted(30_000 * MS + 1)
+    assert_equal [1, 30_000 * MS], state(streak)
+    assert_equal 200 * MS, streak.failed(0)
+    constant = C::Retry.new(C::Constant.new(1, 0.0), nil)
+    assert_nil constant.hint_ceiling
+    assert_equal :beyond_cap, constant.with_hint_ceiling(1).hinted(2)
+    assert_raises(RangeError) { streak.with_hint_ceiling(-1) }
+    assert_raises(TypeError) { streak.with_hint_ceiling(nil) }
+    assert_equal 30_000 * MS, streak.hint_ceiling
+  end
+
   def test_success_ends_the_streak_and_unbounded_never_refuses
     streak = C::Retry.new(C::Fibonacci.new(10, 1_000, 0.0), 3)
     streak.failed(0)
@@ -87,6 +104,7 @@ class RetryTest < Minitest::Test
     assert_raises(FrozenError) { streak.failed('not a draw') }
     assert_raises(FrozenError) { streak.hinted(nil) }
     assert_raises(FrozenError) { streak.succeeded }
+    assert_raises(FrozenError) { streak.with_hint_ceiling(1) }
     assert_equal [1, 100 * MS], state(streak)
   end
 

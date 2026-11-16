@@ -23,6 +23,8 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     class.define_singleton_method("new", function!(Retry::new, 2))?;
     class.define_method("strategy", method!(Retry::strategy, 0))?;
     class.define_method("max_attempts", method!(Retry::max_attempts, 0))?;
+    class.define_method("hint_ceiling", method!(Retry::hint_ceiling, 0))?;
+    class.define_method("with_hint_ceiling", method!(Retry::with_hint_ceiling, 1))?;
     class.define_method("failures", method!(Retry::failures, 0))?;
     class.define_method("waited", method!(Retry::waited, 0))?;
     class.define_method("failed", method!(Retry::failed, 1))?;

@@ -39,6 +39,22 @@ impl Retry {
         self.core.borrow().max_attempts().map(NonZeroU8::get)
     }
 
+    /// `hint_ceiling`: Integer nanoseconds, or nil when any hint is honoured.
+    pub fn hint_ceiling(ruby: &Ruby, this: &Self) -> Option<Integer> {
+        let ceiling = this.core.borrow().hint_ceiling();
+        ceiling.map(|ceiling| nanoseconds(ruby, ceiling))
+    }
+
+    /// `with_hint_ceiling(ceiling)`: honours hints up to `ceiling`; self.
+    pub fn with_hint_ceiling(this: Obj<Self>, ceiling: Value) -> Result<Obj<Self>, Error> {
+        this.check_frozen()?;
+        let ceiling = duration(ceiling, "ceiling")?;
+        let mut core = this.core.borrow_mut();
+        *core = core.with_hint_ceiling(ceiling);
+        drop(core);
+        Ok(this)
+    }
+
     pub fn failures(&self) -> u8 {
         self.core.borrow().failures()
     }
