@@ -58,14 +58,14 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chrono-machines"
-version = "0.11.1"
+version = "0.12.0"
 dependencies = [
  "matryona-machines",
 ]
 
 [[package]]
 name = "chrono_machines_native"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "chrono-machines",
  "magnus",
