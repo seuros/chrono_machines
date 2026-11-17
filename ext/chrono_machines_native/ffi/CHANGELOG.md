@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.11.0...chrono_machines_native-v0.12.0) (2026-11-17)
+
+
+### Features
+
+* const shape constructors and a hint ceiling apart from the cap ([57dc398](https://github.com/seuros/chrono_machines/commit/57dc398d4213247c97e1822382277b6e49e06d4e))
+
 ## [0.11.0](https://github.com/seuros/chrono_machines/compare/chrono_machines_native-v0.10.1...chrono_machines_native-v0.11.0) (2026-11-16)
 
 
