@@ -1,5 +1,5 @@
 {
-  ".": "0.13.0",
-  "ext/chrono_machines_native/core": "0.12.0",
-  "ext/chrono_machines_native/ffi": "0.11.0"
+  ".": "0.13.1",
+  "ext/chrono_machines_native/core": "0.13.0",
+  "ext/chrono_machines_native/ffi": "0.12.0"
 }
